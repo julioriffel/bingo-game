@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import type { BingoCard as BingoCardType, GameState } from '../../types/bingo';
 import { BingoCard } from './BingoCard';
 import { GameLogModal } from '../common/GameLogModal';
-import { Sparkles, Eye, Trophy, Bell, Gift, Crown, ScrollText } from 'lucide-react';
+import { Sparkles, Eye, Trophy, Bell, Gift, Crown, ScrollText, Users, ShieldAlert } from 'lucide-react';
 
 interface PlayerViewProps {
   cards: BingoCardType[];
@@ -11,6 +11,9 @@ interface PlayerViewProps {
   onToggleCell: (cardId: string, number: number) => void;
   onCallBingo: (cardId: string) => void;
   lastMessage?: string | null;
+  onOpenUsers?: () => void;
+  userCount?: number;
+  managerInactive?: boolean;
 }
 
 export const PlayerView: React.FC<PlayerViewProps> = ({
@@ -20,6 +23,9 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
   onToggleCell,
   onCallBingo,
   lastMessage,
+  onOpenUsers,
+  userCount,
+  managerInactive,
 }) => {
   const [activeCardIndex, setActiveCardIndex] = useState(0);
   const [assistMode, setAssistMode] = useState(true);
@@ -94,8 +100,46 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
             <Eye className="w-4 h-4" />
             <span className="text-[9px] font-bold mt-0.5">Assistente</span>
           </button>
+
+          {onOpenUsers && (
+            <button
+              onClick={onOpenUsers}
+              className={`p-2 sm:p-2.5 rounded-xl border flex flex-col items-center justify-center transition-colors cursor-pointer ${
+                managerInactive
+                  ? 'bg-rose-500/20 border-rose-500/50 text-rose-300 animate-pulse'
+                  : 'bg-slate-800/80 hover:bg-slate-700/80 border-slate-700 text-slate-300 hover:text-indigo-300'
+              }`}
+              title="Ver usuários (Manager e Jogadores)"
+            >
+              <Users className="w-4 h-4 text-indigo-400" />
+              <span className="text-[9px] font-bold mt-0.5">
+                {managerInactive ? 'Assumir' : `Usuários (${userCount ?? 0})`}
+              </span>
+            </button>
+          )}
         </div>
       </div>
+
+      {/* Manager Inactive Alert Banner (Floating prompt for players) */}
+      {managerInactive && onOpenUsers && (
+        <div
+          onClick={onOpenUsers}
+          className="bg-gradient-to-r from-rose-950/90 to-amber-950/90 border border-rose-500/60 rounded-2xl p-3 flex items-center justify-between gap-3 text-xs shadow-xl shadow-rose-950/50 cursor-pointer animate-pulse"
+        >
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-xl bg-rose-500/20 text-rose-400">
+              <ShieldAlert className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="font-bold text-rose-200">Manager Inativo há mais de 2 minutos!</div>
+              <div className="text-[11px] text-rose-300/80">Toque aqui para assumir o gerenciamento da sala.</div>
+            </div>
+          </div>
+          <span className="px-3 py-1.5 rounded-xl bg-rose-500 text-slate-950 font-black text-xs shrink-0 shadow">
+            ASSUMIR
+          </span>
+        </div>
+      )}
 
       {/* In-Game Notifications Banner */}
       {lastMessage && (

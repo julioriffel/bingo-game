@@ -1,5 +1,6 @@
 import json
 import logging
+import time
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from ..services.connection_manager import connection_manager
 from ..services.room_service import room_service
@@ -33,8 +34,25 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str):
             msg_type = msg.get("type")
             payload = msg.get("payload", {})
 
+            # Record user/manager activity for non-ping messages
+            active_id = payload.get("player_id") or payload.get("host_id")
+            if active_id:
+                room_service.touch_manager_activity(code, active_id)
+
             if msg_type == "ping":
                 await connection_manager.send_personal(websocket, {"type": "pong"})
+
+            elif msg_type == "manager_heartbeat":
+                host_id = payload.get("host_id")
+                if host_id:
+                    room_service.touch_manager_activity(code, host_id)
+                    await connection_manager.send_personal(websocket, {
+                        "type": "manager_heartbeat_ack",
+                        "payload": {
+                            "manager_last_active_at": room.manager_last_active_at,
+                            "manager_inactive": False,
+                        }
+                    })
 
             elif msg_type == "join":
                 # Handshake associating player token/id to this socket
@@ -44,14 +62,24 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str):
                 if player and player.token == token:
                     connection_manager.socket_meta[websocket] = (code, player_id)
                     player.connected = True
-                    # Broadcast updated player list
+                    player.last_active_at = time.time()
+                    if player.is_host:
+                        room.manager_last_active_at = time.time()
+
+                    # Broadcast updated user list (manager separated from players)
                     await connection_manager.broadcast_to_room(code, {
                         "type": "player_list_update",
                         "payload": {
+                            "host_id": room.host_id,
+                            "host_name": room.host_name,
+                            "manager_last_active_at": room.manager_last_active_at,
+                            "manager_inactive": room.is_manager_inactive(),
+                            "player_count": room.get_player_count(),
                             "players": [
                                 {"id": p.id, "name": p.name, "is_host": p.is_host, "connected": p.connected}
-                                for p in room.players.values()
-                            ]
+                                for p in room.players.values() if not p.is_host
+                            ],
+                            "users": room.get_connected_users_list(),
                         }
                     })
                     # Send current room state to joining player
@@ -59,6 +87,12 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str):
                         "type": "room_state",
                         "payload": {
                             "code": room.code,
+                            "host_id": room.host_id,
+                            "host_name": room.host_name,
+                            "manager_last_active_at": room.manager_last_active_at,
+                            "manager_inactive": room.is_manager_inactive(),
+                            "player_count": room.get_player_count(),
+                            "users": room.get_connected_users_list(),
                             "status": room.status.value,
                             "stage": room.stage.value,
                             "drawn_balls": room.drawn_balls,
@@ -141,6 +175,15 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str):
                             "type": "error", "payload": {"message": str(e)}
                         })
 
+            elif msg_type == "claim_manager":
+                player_id = payload.get("player_id")
+                try:
+                    await room_service.claim_manager(code, player_id)
+                except Exception as e:
+                    await connection_manager.send_personal(websocket, {
+                        "type": "error", "payload": {"message": str(e)}
+                    })
+
             elif msg_type == "remove_prize":
                 host_id = payload.get("host_id")
                 prize_id = payload.get("prize_id")
@@ -160,12 +203,21 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str):
                 r = room_service.rooms[r_code]
                 if p_id in r.players:
                     r.players[p_id].connected = False
+                    r.players[p_id].last_active_at = time.time()
+                    if r.host_id == p_id:
+                        r.manager_last_active_at = time.time()
                     await connection_manager.broadcast_to_room(r_code, {
                         "type": "player_list_update",
                         "payload": {
+                            "host_id": r.host_id,
+                            "host_name": r.host_name,
+                            "manager_last_active_at": r.manager_last_active_at,
+                            "manager_inactive": r.is_manager_inactive(),
+                            "player_count": r.get_player_count(),
                             "players": [
                                 {"id": p.id, "name": p.name, "is_host": p.is_host, "connected": p.connected}
-                                for p in r.players.values()
-                            ]
+                                for p in r.players.values() if not p.is_host
+                            ],
+                            "users": r.get_connected_users_list(),
                         }
                     })

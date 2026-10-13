@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import confetti from 'canvas-confetti';
 import { Header } from './components/common/Header';
 import { RoomRadar } from './components/lobby/RoomRadar';
@@ -7,6 +7,7 @@ import { JoinRoomModal } from './components/lobby/JoinRoomModal';
 import { PlayerView } from './components/player/PlayerView';
 import { HostScreen } from './components/host/HostScreen';
 import { TiebreakerModal } from './components/common/TiebreakerModal';
+import { UsersListModal } from './components/common/UsersListModal';
 import { useWebSocket } from './hooks/useWebSocket';
 import { useAudio } from './hooks/useAudio';
 import { useSpeech } from './hooks/useSpeech';
@@ -25,6 +26,8 @@ export function App() {
   const [isHost, setIsHost] = useState<boolean>(false);
   const [cards, setCards] = useState<BingoCard[]>([]);
   const [players, setPlayers] = useState<Player[]>([]);
+  const [users, setUsers] = useState<Player[]>([]);
+  const [isUsersOpen, setIsUsersOpen] = useState<boolean>(false);
   const [gameState, setGameState] = useState<GameState>({
     code: '',
     status: 'lobby',
@@ -47,6 +50,25 @@ export function App() {
   const [statusBanner, setStatusBanner] = useState<string | null>(null);
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
   const [voiceEnabled, setVoiceEnabled] = useState<boolean>(true);
+
+  // User activity tracker
+  const lastActivityRef = useRef<number>(Date.now());
+
+  useEffect(() => {
+    const recordActivity = () => {
+      lastActivityRef.current = Date.now();
+    };
+    window.addEventListener('mousemove', recordActivity);
+    window.addEventListener('keydown', recordActivity);
+    window.addEventListener('click', recordActivity);
+    window.addEventListener('touchstart', recordActivity);
+    return () => {
+      window.removeEventListener('mousemove', recordActivity);
+      window.removeEventListener('keydown', recordActivity);
+      window.removeEventListener('click', recordActivity);
+      window.removeEventListener('touchstart', recordActivity);
+    };
+  }, []);
 
   // Hooks
   const { playStamp, playBallDrop, playVictory, playError } = useAudio();
@@ -81,13 +103,23 @@ export function App() {
 
       switch (type) {
         case 'player_list_update':
-          if (payload?.players) {
-            setPlayers(payload.players);
+          if (payload) {
+            if (payload.players) setPlayers(payload.players);
+            if (payload.users) setUsers(payload.users);
+            setGameState((prev) => ({
+              ...prev,
+              host_id: payload.host_id || prev.host_id,
+              host_name: payload.host_name || prev.host_name,
+              manager_last_active_at: payload.manager_last_active_at ?? prev.manager_last_active_at,
+              manager_inactive: payload.manager_inactive ?? prev.manager_inactive,
+              player_count: payload.player_count ?? prev.player_count,
+            }));
           }
           break;
 
         case 'room_state':
           if (payload) {
+            if (payload.users) setUsers(payload.users);
             setGameState((prev) => ({
               ...prev,
               code: payload.code || prev.code,
@@ -100,7 +132,38 @@ export function App() {
               winners: payload.winners || prev.winners,
               prizes: payload.prizes || prev.prizes || [],
               game_log: payload.game_log || prev.game_log || [],
+              host_id: payload.host_id || prev.host_id,
+              host_name: payload.host_name || prev.host_name,
+              manager_last_active_at: payload.manager_last_active_at ?? prev.manager_last_active_at,
+              manager_inactive: payload.manager_inactive ?? prev.manager_inactive,
+              player_count: payload.player_count ?? prev.player_count,
             }));
+          }
+          break;
+
+        case 'manager_changed':
+          if (payload) {
+            const newHostId = payload.host_id;
+            const newHostName = payload.host_name;
+            setGameState((prev) => ({
+              ...prev,
+              host_id: newHostId,
+              host_name: newHostName,
+              manager_last_active_at: payload.manager_last_active_at,
+              manager_inactive: false,
+              game_log: payload.log_entry ? [...prev.game_log, payload.log_entry] : prev.game_log,
+            }));
+            if (newHostId === playerId) {
+              setIsHost(true);
+              setCurrentView('host');
+              setStatusBanner('Você assumiu a gerência da sala!');
+              if (voiceEnabled) speakText('Você assumiu a gerência da sala!');
+            } else {
+              if (isHost) {
+                setIsHost(false);
+              }
+              setStatusBanner(`${newHostName} assumiu a gerência da sala.`);
+            }
           }
           break;
 
@@ -352,6 +415,41 @@ export function App() {
     }
   }, [isConnected, roomCode, playerId, playerToken, sendMessage]);
 
+  // Periodic manager heartbeat (only if active within last 2 minutes)
+  useEffect(() => {
+    if (!isHost || !isConnected || !roomCode || !playerId) return;
+    const interval = setInterval(() => {
+      if (Date.now() - lastActivityRef.current < 120_000) {
+        sendMessage('manager_heartbeat', { host_id: playerId });
+      }
+    }, 15000);
+    return () => clearInterval(interval);
+  }, [isHost, isConnected, roomCode, playerId, sendMessage]);
+
+  // Claim management handler
+  const handleClaimManager = async () => {
+    if (!roomCode || !playerId) return;
+    try {
+      const res = await fetch(`/api/rooms/${roomCode}/claim-manager`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ player_id: playerId }),
+      });
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.detail || 'Não foi possível assumir o gerenciamento');
+      }
+      setIsHost(true);
+      setCurrentView('host');
+      setIsUsersOpen(false);
+      setStatusBanner('Você assumiu a gerência da sala!');
+      if (voiceEnabled) speakText('Você assumiu a gerência da sala!');
+      if (soundEnabled) playVictory();
+    } catch (err: any) {
+      alert(err.message || 'Erro ao assumir gerência');
+    }
+  };
+
   // Create room flow
   const handleCreateRoom = async (config: any) => {
     try {
@@ -371,20 +469,8 @@ export function App() {
       setIsHost(true);
       setIsCreateOpen(false);
 
-      // Join Host as player too with 1 card by default
-      const joinRes = await fetch(`/api/rooms/${data.room_code}/join`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          player_name: config.host_name,
-          card_count: 1,
-          token: data.token,
-        }),
-      });
-      if (joinRes.ok) {
-        const joinData = await joinRes.json();
-        setCards(joinData.cards || []);
-      }
+      // Manager coordinates the game and does NOT join as a playing player with cards
+      setCards([]);
 
       setGameState((prev) => ({
         ...prev,
@@ -550,6 +636,9 @@ export function App() {
         onBackToLobby={currentView !== 'lobby' ? handleBackToLobby : undefined}
         onOpenHostView={isHost && currentView === 'game' ? () => setCurrentView('host') : undefined}
         isHost={isHost}
+        userCount={gameState.player_count ?? players.filter((p) => !p.is_host).length}
+        onOpenUsers={roomCode ? () => setIsUsersOpen(true) : undefined}
+        managerInactive={gameState.manager_inactive || (gameState.manager_last_active_at ? (Date.now() / 1000 - gameState.manager_last_active_at >= 120) : false)}
       />
 
       <main className="flex-1 flex flex-col items-center justify-start p-3 sm:p-6">
@@ -573,6 +662,9 @@ export function App() {
             onToggleCell={handleToggleCell}
             onCallBingo={handleCallBingo}
             lastMessage={statusBanner}
+            userCount={gameState.player_count ?? players.filter((p) => !p.is_host).length}
+            onOpenUsers={() => setIsUsersOpen(true)}
+            managerInactive={gameState.manager_inactive || (gameState.manager_last_active_at ? (Date.now() / 1000 - gameState.manager_last_active_at >= 120) : false)}
           />
         )}
 
@@ -596,6 +688,7 @@ export function App() {
             onBackToPlayerView={cards.length > 0 ? () => setCurrentView('game') : undefined}
             onAddPrize={handleAddPrize}
             onRemovePrize={handleRemovePrize}
+            onOpenUsers={() => setIsUsersOpen(true)}
           />
         )}
       </main>
@@ -622,6 +715,21 @@ export function App() {
         currentPlayerId={playerId}
         isHost={isHost}
         onPickStone={handlePickStone}
+      />
+
+      {/* USERS LIST MODAL (MANAGER & PLAYERS) */}
+      <UsersListModal
+        isOpen={isUsersOpen}
+        onClose={() => setIsUsersOpen(false)}
+        roomCode={roomCode || ''}
+        hostName={gameState.host_name || playerName}
+        hostId={gameState.host_id}
+        currentUserId={playerId}
+        isCurrentUserHost={isHost}
+        users={users.length > 0 ? users : players}
+        managerLastActiveAt={gameState.manager_last_active_at}
+        managerInactive={gameState.manager_inactive}
+        onClaimManager={handleClaimManager}
       />
     </div>
   );

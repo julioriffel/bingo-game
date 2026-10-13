@@ -44,6 +44,7 @@ def get_room(room_code: str):
     return {
         "code": room.code,
         "name": room.name,
+        "host_id": room.host_id,
         "host_name": room.host_name,
         "status": room.status.value,
         "stage": room.stage.value,
@@ -54,11 +55,47 @@ def get_room(room_code: str):
         "active_contest": room.active_contest.model_dump() if room.active_contest else None,
         "drawn_balls": room.drawn_balls,
         "last_drawn_ball": room.last_drawn_ball,
-        "player_count": len([p for p in room.players.values() if p.connected]),
+        "player_count": room.get_player_count(),
+        "manager_last_active_at": room.manager_last_active_at,
+        "manager_inactive": room.is_manager_inactive(),
+        "users": room.get_connected_users_list(),
         "winners": [w.model_dump() for w in room.winners],
         "prizes": [p.model_dump() for p in room.prizes],
         "game_log": [e.model_dump() for e in room.game_log],
     }
+
+@router.get("/{room_code}/users")
+def get_room_users(room_code: str):
+    room = room_service.get_room(room_code.upper())
+    if not room:
+        raise HTTPException(status_code=404, detail="Sala não encontrada")
+    return {
+        "room_code": room.code,
+        "host_id": room.host_id,
+        "host_name": room.host_name,
+        "manager_last_active_at": room.manager_last_active_at,
+        "manager_inactive": room.is_manager_inactive(),
+        "player_count": room.get_player_count(),
+        "users": room.get_connected_users_list(),
+    }
+
+class ClaimManagerRequest(BaseModel):
+    player_id: str
+
+@router.post("/{room_code}/claim-manager")
+async def claim_manager_endpoint(room_code: str, req: ClaimManagerRequest):
+    code = room_code.upper()
+    try:
+        room, new_mgr = await room_service.claim_manager(code, req.player_id)
+        return {
+            "success": True,
+            "host_id": new_mgr.id,
+            "host_name": new_mgr.name,
+            "token": new_mgr.token,
+            "player_count": room.get_player_count(),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 @router.get("/{room_code}/log")
 def get_room_log(room_code: str):

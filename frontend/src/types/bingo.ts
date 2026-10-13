@@ -44,6 +44,9 @@ export interface Player {
   name: string;
   is_host: boolean;
   connected: boolean;
+  role?: 'manager' | 'player';
+  card_count?: number;
+  last_active_at?: number;
 }
 
 export interface WinnerInfo {
@@ -65,7 +68,7 @@ export interface WinnerInfo {
 
 export interface GameLogEntry {
   id: string;
-  event_type: 'ball_drawn' | 'bingo_awarded' | 'bingo_tiebreaker';
+  event_type: 'ball_drawn' | 'bingo_awarded' | 'bingo_tiebreaker' | 'manager_transferred';
   order: number;
   timestamp: number;
   ball?: number | null;
@@ -133,6 +136,12 @@ export interface GameState {
   game_log: GameLogEntry[];
   active_contest?: BingoContest | null;
   contest_window_seconds?: number;
+  host_id?: string;
+  host_name?: string;
+  manager_last_active_at?: number;
+  manager_inactive?: boolean;
+  player_count?: number;
+  users?: Player[];
 }
 
 export interface WSMessage<T = any> {

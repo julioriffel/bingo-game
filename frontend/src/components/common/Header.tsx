@@ -1,5 +1,5 @@
 import React from 'react';
-import { Dices, Wifi, WifiOff, Volume2, VolumeX, Tv, ArrowLeft } from 'lucide-react';
+import { Dices, Wifi, WifiOff, Volume2, VolumeX, Tv, ArrowLeft, Users, ShieldAlert } from 'lucide-react';
 
 interface HeaderProps {
   title?: string;
@@ -10,6 +10,9 @@ interface HeaderProps {
   onBackToLobby?: () => void;
   onOpenHostView?: () => void;
   isHost?: boolean;
+  userCount?: number;
+  onOpenUsers?: () => void;
+  managerInactive?: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -21,6 +24,9 @@ export const Header: React.FC<HeaderProps> = ({
   onBackToLobby,
   onOpenHostView,
   isHost = false,
+  userCount,
+  onOpenUsers,
+  managerInactive = false,
 }) => {
   return (
     <header className="w-full bg-slate-900/80 backdrop-blur border-b border-slate-800 px-4 py-3 flex items-center justify-between sticky top-0 z-40">
@@ -52,6 +58,36 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
 
       <div className="flex items-center gap-2">
+        {/* Manager Inactive Alert Pill (Visible to players if manager is inactive for 2+ min) */}
+        {!isHost && managerInactive && onOpenUsers && (
+          <button
+            onClick={onOpenUsers}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/50 text-xs font-bold transition-all animate-pulse shadow-lg shadow-rose-500/20 cursor-pointer"
+            title="Manager inativo! Clique para assumir"
+          >
+            <ShieldAlert className="w-4 h-4 text-rose-400" />
+            <span className="hidden sm:inline">Manager Inativo</span>
+            <span className="bg-rose-500 text-slate-950 px-1 rounded text-[10px] font-black">ASSUMIR</span>
+          </button>
+        )}
+
+        {/* Users list button */}
+        {onOpenUsers && (
+          <button
+            onClick={onOpenUsers}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold transition-all cursor-pointer"
+            title="Ver lista de usuários (Manager e Jogadores)"
+          >
+            <Users className="w-4 h-4 text-indigo-400" />
+            <span className="hidden sm:inline">
+              {userCount !== undefined ? `${userCount} Jogador${userCount === 1 ? '' : 'es'}` : 'Usuários'}
+            </span>
+            {userCount !== undefined && (
+              <span className="sm:hidden font-mono text-indigo-300">{userCount}</span>
+            )}
+          </button>
+        )}
+
         {/* TV Mode Button for Host */}
         {isHost && onOpenHostView && (
           <button

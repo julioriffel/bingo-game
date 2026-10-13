@@ -90,6 +90,7 @@ class RoomService:
             players={host_id: host_player},
             prizes=room_prizes,
             contest_window_seconds=contest_window_seconds,
+            manager_last_active_at=time.time(),
         )
         self.rooms[room_code] = room
         return room, host_player
@@ -320,6 +321,8 @@ class RoomService:
             return False, "Sala ou jogador inexistente", None
 
         player = room.players[player_id]
+        if player.is_host:
+            return False, "O Manager coordena a partida e não concorre como jogador", None
         target_card = next((c for c in player.cards if c.id == card_id), None)
         if not target_card:
             return False, "Cartela não pertence ao jogador", None
@@ -809,6 +812,90 @@ class RoomService:
             if room.draw_mode == DrawMode.AUTO:
                 self._start_draw_loop(room_code)
 
+    def touch_manager_activity(self, room_code: str, player_id: str) -> bool:
+        room = self.rooms.get(room_code)
+        if not room:
+            return False
+        now = time.time()
+        if player_id in room.players:
+            room.players[player_id].last_active_at = now
+        if room.host_id == player_id:
+            room.manager_last_active_at = now
+            return True
+        return False
+
+    async def claim_manager(self, room_code: str, player_id: str, threshold_seconds: float = 120.0) -> Tuple[Room, Player]:
+        room = self.rooms.get(room_code)
+        if not room:
+            raise ValueError(f"Sala '{room_code}' não encontrada.")
+
+        new_manager = room.players.get(player_id)
+        if not new_manager:
+            raise ValueError("Jogador não encontrado na sala.")
+
+        if room.host_id == player_id:
+            raise ValueError("Você já é o manager desta sala.")
+
+        # Check inactivity of current manager (120 seconds threshold)
+        if not room.is_manager_inactive(threshold_seconds):
+            elapsed = time.time() - room.manager_last_active_at
+            remaining = int(max(0, threshold_seconds - elapsed))
+            raise ValueError(
+                f"O manager ainda está ativo. Só é possível assumir após 2 minutos de inatividade ({remaining}s restantes)."
+            )
+
+        old_manager = room.players.get(room.host_id)
+        if old_manager:
+            old_manager.is_host = False
+
+        new_manager.is_host = True
+        room.host_id = new_manager.id
+        room.host_name = new_manager.name
+        room.manager_last_active_at = time.time()
+        new_manager.last_active_at = time.time()
+
+        # Log to game_log
+        log_entry = GameLogEntry(
+            id=f"log_{uuid.uuid4().hex[:8]}",
+            event_type="manager_transferred",
+            order=len(room.game_log) + 1,
+            timestamp=time.time(),
+            player_id=new_manager.id,
+            player_name=new_manager.name,
+            details=f"{new_manager.name} assumiu a gerência da sala por inatividade do manager anterior.",
+        )
+        room.game_log.append(log_entry)
+
+        # Broadcast manager_changed and player_list_update
+        await connection_manager.broadcast_to_room(room_code, {
+            "type": "manager_changed",
+            "payload": {
+                "host_id": new_manager.id,
+                "host_name": new_manager.name,
+                "manager_last_active_at": room.manager_last_active_at,
+                "message": f"{new_manager.name} assumiu o gerenciamento da sala.",
+                "log_entry": log_entry.model_dump(),
+            }
+        })
+
+        await connection_manager.broadcast_to_room(room_code, {
+            "type": "player_list_update",
+            "payload": {
+                "host_id": room.host_id,
+                "host_name": room.host_name,
+                "manager_last_active_at": room.manager_last_active_at,
+                "manager_inactive": room.is_manager_inactive(),
+                "player_count": room.get_player_count(),
+                "players": [
+                    {"id": p.id, "name": p.name, "is_host": p.is_host, "connected": p.connected}
+                    for p in room.players.values() if not p.is_host
+                ],
+                "users": room.get_connected_users_list(),
+            }
+        })
+
+        return room, new_manager
+
     def get_public_rooms(self) -> List[dict]:
         public_list = []
         for r in self.rooms.values():
@@ -819,7 +906,7 @@ class RoomService:
                     "host_name": r.host_name,
                     "status": r.status.value,
                     "win_condition": r.win_condition.value,
-                    "player_count": len([p for p in r.players.values() if p.connected]),
+                    "player_count": r.get_player_count(),
                     "max_cards": r.max_cards_per_player,
                     "prizes_count": len(r.prizes),
                     "prizes": [p.model_dump() for p in r.prizes],

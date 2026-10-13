@@ -15,6 +15,7 @@ import {
   Sliders,
   Tv,
   ScrollText,
+  Crown,
 } from 'lucide-react';
 
 interface HostScreenProps {
@@ -31,6 +32,7 @@ interface HostScreenProps {
   onBackToPlayerView?: () => void;
   onAddPrize?: (title: string, description: string) => void;
   onRemovePrize?: (prizeId: string) => void;
+  onOpenUsers?: () => void;
 }
 
 function getLetterForBall(ball: number | null): string {
@@ -56,6 +58,7 @@ export const HostScreen: React.FC<HostScreenProps> = ({
   onBackToPlayerView,
   onAddPrize,
   onRemovePrize,
+  onOpenUsers,
 }) => {
   const [isLogOpen, setIsLogOpen] = useState(false);
 
@@ -78,7 +81,8 @@ export const HostScreen: React.FC<HostScreenProps> = ({
   }, [gameState, isHost, onStartGame, onDrawNext, onTogglePause]);
 
   const letter = getLetterForBall(gameState.last_drawn_ball);
-  const activePlayers = players.filter((p) => p.connected);
+  // Manager is NOT counted in active bingo players
+  const activePlayers = players.filter((p) => !p.is_host && p.connected);
 
   return (
     <div className="w-full max-w-7xl mx-auto p-4 sm:p-6 space-y-6">
@@ -136,15 +140,34 @@ export const HostScreen: React.FC<HostScreenProps> = ({
 
           <div className="h-10 w-px bg-slate-800 hidden sm:block" />
 
+          {/* Manager / Mesa */}
           <div className="text-right">
             <div className="text-xs text-slate-400 flex items-center gap-1.5 justify-end">
-              <Users className="w-3.5 h-3.5 text-indigo-400" />
-              <span>Conectados:</span>
+              <Crown className="w-3.5 h-3.5 text-amber-400" />
+              <span>Manager:</span>
             </div>
-            <div className="text-base sm:text-lg font-black text-slate-100">
-              {activePlayers.length} Jogadores
+            <div className="text-base sm:text-lg font-black text-amber-300">
+              {gameState.host_name || 'Mesa'}
             </div>
           </div>
+
+          <div className="h-10 w-px bg-slate-800 hidden sm:block" />
+
+          {/* Jogadores Conectados */}
+          <button
+            type="button"
+            onClick={onOpenUsers}
+            className="text-right p-1.5 -m-1.5 rounded-xl hover:bg-slate-800/60 transition-colors cursor-pointer group"
+            title="Ver lista de usuários conectados"
+          >
+            <div className="text-xs text-slate-400 flex items-center gap-1.5 justify-end group-hover:text-indigo-400">
+              <Users className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Jogadores:</span>
+            </div>
+            <div className="text-base sm:text-lg font-black text-slate-100">
+              {activePlayers.length} Conectado{activePlayers.length === 1 ? '' : 's'}
+            </div>
+          </button>
 
           <div className="h-10 w-px bg-slate-800 hidden sm:block" />
 

@@ -41,6 +41,7 @@ class Player(BaseModel):
     connected: bool = True
     token: str
     joined_at: float = Field(default_factory=time.time)
+    last_active_at: float = Field(default_factory=time.time)
 
 class WinnerInfo(BaseModel):
     player_id: str
@@ -130,4 +131,25 @@ class Room(BaseModel):
     game_log: list[GameLogEntry] = Field(default_factory=list)
     active_contest: BingoContest | None = None
     contest_window_seconds: float = 10.0
+    manager_last_active_at: float = Field(default_factory=time.time)
     created_at: float = Field(default_factory=time.time)
+
+    def get_player_count(self) -> int:
+        return len([p for p in self.players.values() if not p.is_host and p.connected])
+
+    def is_manager_inactive(self, threshold_seconds: float = 120.0) -> bool:
+        return (time.time() - self.manager_last_active_at) >= threshold_seconds
+
+    def get_connected_users_list(self) -> list[dict]:
+        users = []
+        for p in self.players.values():
+            users.append({
+                "id": p.id,
+                "name": p.name,
+                "is_host": p.is_host,
+                "role": "manager" if p.is_host else "player",
+                "connected": p.connected,
+                "card_count": len(p.cards),
+                "last_active_at": p.last_active_at,
+            })
+        return users

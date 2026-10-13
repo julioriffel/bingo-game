@@ -68,6 +68,8 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str):
                             "winners": [w.model_dump() for w in room.winners],
                             "prizes": [p.model_dump() for p in room.prizes],
                             "game_log": [e.model_dump() for e in room.game_log],
+                            "active_contest": room.active_contest.model_dump() if room.active_contest else None,
+                            "contest_window_seconds": room.contest_window_seconds,
                         }
                     })
 
@@ -114,12 +116,18 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str):
             elif msg_type == "call_bingo":
                 player_id = payload.get("player_id")
                 card_id = payload.get("card_id")
-                valid, reason, winner_info = await room_service.call_bingo(code, player_id, card_id)
+                valid, reason, cand_info = await room_service.call_bingo(code, player_id, card_id)
                 if not valid:
                     await connection_manager.send_personal(websocket, {
                         "type": "bingo_invalid",
                         "payload": {"reason": reason}
                     })
+
+            elif msg_type == "pick_tiebreaker_stone":
+                player_id = payload.get("player_id")
+                stone_idx = payload.get("stone_index")
+                if player_id:
+                    await room_service.pick_contest_stone(code, player_id, stone_idx)
 
             elif msg_type == "add_prize":
                 host_id = payload.get("host_id")

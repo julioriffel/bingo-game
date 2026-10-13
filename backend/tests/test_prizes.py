@@ -61,6 +61,9 @@ async def test_room_with_variable_prizes_and_winner_attribution():
     assert winner.player_name == "Vencedor Sortudo"
     assert winner.prize_title == "Cesta de Chocolates"
 
+    # Resolve contest window to award the prize
+    await room_service.resolve_contest_window(code)
+
     # Verify first prize now has winner assigned
     assert room.prizes[0].winner_name == "Vencedor Sortudo"
     assert room.prizes[0].winner_id == player.id

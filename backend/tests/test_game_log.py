@@ -56,6 +56,9 @@ async def test_game_log_recording_balls_and_winner():
     assert winner.player_name == "Maria Sortuda"
     assert len(winner.winning_numbers) == 5
 
+    # Resolve contest window to award the prize
+    await room_service.resolve_contest_window(code)
+
     # 5. Check game_log for bingo_awarded entry
     win_entries = [e for e in room.game_log if e.event_type == "bingo_awarded"]
     assert len(win_entries) == 1

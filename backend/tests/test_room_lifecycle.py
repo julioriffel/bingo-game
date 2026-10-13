@@ -88,3 +88,4 @@ async def test_room_game_lifecycle_and_bingo():
     assert win_type == "Linha"
     assert winner is not None
     assert winner.player_name == "Jogador 1"
+    await room_service.resolve_contest_window(code)

@@ -6,6 +6,7 @@ import { CreateRoomModal } from './components/lobby/CreateRoomModal';
 import { JoinRoomModal } from './components/lobby/JoinRoomModal';
 import { PlayerView } from './components/player/PlayerView';
 import { HostScreen } from './components/host/HostScreen';
+import { TiebreakerModal } from './components/common/TiebreakerModal';
 import { useWebSocket } from './hooks/useWebSocket';
 import { useAudio } from './hooks/useAudio';
 import { useSpeech } from './hooks/useSpeech';
@@ -35,6 +36,7 @@ export function App() {
     winners: [],
     prizes: [],
     game_log: [],
+    active_contest: null,
   });
 
   // UI & Modals State
@@ -154,6 +156,109 @@ export function App() {
           setStatusBanner('Sorteio retomado!');
           break;
 
+        case 'bingo_countdown_started':
+          if (payload) {
+            setGameState((prev) => ({
+              ...prev,
+              active_contest: {
+                id: payload.contest_id,
+                ball: payload.ball,
+                target_prize_id: payload.target_prize?.id,
+                target_prize_title: payload.target_prize?.title,
+                status: 'window',
+                duration_seconds: payload.duration_seconds,
+                window_start_time: Date.now() / 1000,
+                window_end_time: payload.ends_at,
+                candidates: payload.candidates || [payload.first_candidate],
+              },
+            }));
+            setStatusBanner(payload.message || 'Bingo cantado! Janela de validação aberta.');
+            if (voiceEnabled) speakText('Atenção! Bingo cantado! Janela de dez segundos aberta!');
+          }
+          break;
+
+        case 'bingo_candidate_joined':
+          if (payload) {
+            setGameState((prev) => {
+              if (!prev.active_contest) return prev;
+              return {
+                ...prev,
+                active_contest: {
+                  ...prev.active_contest,
+                  candidates: payload.candidates,
+                },
+              };
+            });
+            setStatusBanner(payload.message || 'Mais um jogador entrou na disputa do Bingo!');
+            if (voiceEnabled && payload.new_candidate) {
+              speakText(`${payload.new_candidate.player_name} também cantou bingo!`);
+            }
+          }
+          break;
+
+        case 'bingo_tiebreaker_started':
+          if (payload) {
+            setGameState((prev) => {
+              const current = prev.active_contest || {
+                id: payload.contest_id,
+                ball: payload.ball,
+                target_prize_title: payload.prize_title,
+                duration_seconds: 15,
+                window_start_time: Date.now() / 1000,
+                window_end_time: Date.now() / 1000 + 15,
+                candidates: [],
+              };
+              return {
+                ...prev,
+                active_contest: {
+                  ...current,
+                  status: 'tiebreaker',
+                  candidates: payload.candidates,
+                },
+              };
+            });
+            setStatusBanner(payload.message || '⚔️ Empate no Bingo! Disputa da pedra mais alta iniciada!');
+            if (voiceEnabled) speakText('Atenção! Empate no Bingo! Disputa da pedra mais alta!');
+          }
+          break;
+
+        case 'tiebreaker_stone_revealed':
+          if (payload) {
+            setGameState((prev) => {
+              if (!prev.active_contest) return prev;
+              return {
+                ...prev,
+                active_contest: {
+                  ...prev.active_contest,
+                  candidates: payload.candidates || prev.active_contest.candidates.map((c) =>
+                    c.player_id === payload.player_id ? { ...c, chosen_stone: payload.chosen_stone } : c
+                  ),
+                },
+              };
+            });
+          }
+          break;
+
+        case 'tiebreaker_resolved':
+          if (payload) {
+            setGameState((prev) => {
+              const updatedContest = prev.active_contest ? {
+                ...prev.active_contest,
+                status: 'resolved' as const,
+                winner_player_id: payload.winner_player_id,
+                candidates: payload.candidates,
+              } : null;
+              return {
+                ...prev,
+                active_contest: updatedContest,
+                game_log: payload.game_log || prev.game_log,
+              };
+            });
+            setStatusBanner(payload.message || `🏆 ${payload.winner_player_name} venceu a disputa!`);
+            if (voiceEnabled) speakText(`Vitória de ${payload.winner_player_name} com a pedra maior!`);
+          }
+          break;
+
         case 'bingo_valid':
           if (payload) {
             const winner = payload.winner;
@@ -193,6 +298,7 @@ export function App() {
 
             setGameState((prev) => ({
               ...prev,
+              active_contest: null,
               prizes: payload.prizes || prev.prizes,
               game_log: payload.game_log
                 ? payload.game_log
@@ -376,6 +482,14 @@ export function App() {
     });
   };
 
+  // Picking stone in tiebreaker
+  const handlePickStone = (stoneIndex?: number) => {
+    sendMessage('pick_tiebreaker_stone', {
+      player_id: playerId,
+      stone_index: stoneIndex,
+    });
+  };
+
   // Host Controls
   const handleStartGame = () => {
     sendMessage('start_game', { host_id: playerId });
@@ -501,6 +615,14 @@ export function App() {
           onJoin={handleJoinRoom}
         />
       )}
+
+      {/* TIEBREAKER & COUNTDOWN CONTEST MODAL */}
+      <TiebreakerModal
+        contest={gameState.active_contest}
+        currentPlayerId={playerId}
+        isHost={isHost}
+        onPickStone={handlePickStone}
+      />
     </div>
   );
 }

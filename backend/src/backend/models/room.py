@@ -60,7 +60,7 @@ class WinnerInfo(BaseModel):
 
 class GameLogEntry(BaseModel):
     id: str
-    event_type: str  # "ball_drawn" | "bingo_awarded"
+    event_type: str  # "ball_drawn" | "bingo_awarded" | "bingo_tiebreaker"
     order: int       # Sequential order: 1, 2, 3...
     timestamp: float = Field(default_factory=time.time)
     ball: int | None = None
@@ -73,6 +73,40 @@ class GameLogEntry(BaseModel):
     winning_numbers: list[int | str] = Field(default_factory=list)
     prize_title: str | None = None
     on_ball: int | None = None
+    details: str | None = None
+
+class ContestStatus(str, Enum):
+    WINDOW = "window"          # Countdown window (10s)
+    TIEBREAKER = "tiebreaker"  # Players picking stones
+    RESOLVED = "resolved"      # Winner determined
+
+class ContestCandidate(BaseModel):
+    player_id: str
+    player_name: str
+    card_id: str
+    win_type: str = "Bingo"
+    pattern_id: str | None = None
+    pattern_type: str | None = None
+    pattern_name: str | None = None
+    line_index: int | None = None
+    winning_cells: list[dict] = Field(default_factory=list)
+    winning_numbers: list[int | str] = Field(default_factory=list)
+    chosen_stone: int | None = None
+    stone_picked_at: float | None = None
+    prize_title: str | None = None
+
+class BingoContest(BaseModel):
+    id: str
+    ball: int
+    target_prize_id: str | None = None
+    target_prize_title: str | None = None
+    status: ContestStatus = ContestStatus.WINDOW
+    duration_seconds: float = 10.0
+    window_start_time: float = Field(default_factory=time.time)
+    window_end_time: float = Field(default_factory=time.time)
+    candidates: list[ContestCandidate] = Field(default_factory=list)
+    available_stones: list[int] = Field(default_factory=list)
+    winner_player_id: str | None = None
 
 class Room(BaseModel):
     code: str
@@ -94,4 +128,6 @@ class Room(BaseModel):
     winners: list[WinnerInfo] = Field(default_factory=list)
     prizes: list[Prize] = Field(default_factory=list)
     game_log: list[GameLogEntry] = Field(default_factory=list)
+    active_contest: BingoContest | None = None
+    contest_window_seconds: float = 10.0
     created_at: float = Field(default_factory=time.time)

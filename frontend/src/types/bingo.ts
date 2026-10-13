@@ -65,7 +65,7 @@ export interface WinnerInfo {
 
 export interface GameLogEntry {
   id: string;
-  event_type: 'ball_drawn' | 'bingo_awarded';
+  event_type: 'ball_drawn' | 'bingo_awarded' | 'bingo_tiebreaker';
   order: number;
   timestamp: number;
   ball?: number | null;
@@ -78,6 +78,34 @@ export interface GameLogEntry {
   winning_numbers?: (number | string)[];
   prize_title?: string | null;
   on_ball?: number | null;
+  details?: string | null;
+}
+
+export interface ContestCandidate {
+  player_id: string;
+  player_name: string;
+  card_id: string;
+  win_type: string;
+  pattern_name?: string | null;
+  line_index?: number | null;
+  winning_numbers?: (number | string)[];
+  chosen_stone?: number | null;
+  stone_picked_at?: number | null;
+  prize_title?: string | null;
+}
+
+export interface BingoContest {
+  id: string;
+  ball: number;
+  target_prize_id?: string | null;
+  target_prize_title?: string | null;
+  status: 'window' | 'tiebreaker' | 'resolved';
+  duration_seconds: number;
+  window_start_time: number;
+  window_end_time: number;
+  candidates: ContestCandidate[];
+  available_stones?: number[];
+  winner_player_id?: string | null;
 }
 
 export interface PublicRoom {
@@ -103,6 +131,8 @@ export interface GameState {
   winners: WinnerInfo[];
   prizes: Prize[];
   game_log: GameLogEntry[];
+  active_contest?: BingoContest | null;
+  contest_window_seconds?: number;
 }
 
 export interface WSMessage<T = any> {

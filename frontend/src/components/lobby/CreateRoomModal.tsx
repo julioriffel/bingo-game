@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Trophy, Layers, Clock, Globe, Lock, Gift, Plus, Trash2 } from 'lucide-react';
+import { X, Trophy, Layers, Clock, Globe, Lock, Gift, Plus, Trash2, Timer } from 'lucide-react';
 
 interface PrizeItem {
   title: string;
@@ -17,6 +17,7 @@ interface CreateRoomModalProps {
     is_public: boolean;
     draw_interval: number;
     draw_mode: 'auto' | 'manual';
+    contest_window_seconds?: number;
     prizes: PrizeItem[];
   }) => Promise<void>;
   isLoading?: boolean;
@@ -35,6 +36,7 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
   const [isPublic, setIsPublic] = useState<boolean>(true);
   const [drawMode, setDrawMode] = useState<'auto' | 'manual'>('auto');
   const [drawInterval, setDrawInterval] = useState<number>(5);
+  const [contestWindow, setContestWindow] = useState<number>(10);
 
   // Dynamic prizes list
   const [prizes, setPrizes] = useState<PrizeItem[]>([
@@ -101,6 +103,7 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
       is_public: isPublic,
       draw_interval: drawInterval,
       draw_mode: drawMode,
+      contest_window_seconds: contestWindow,
       prizes: validPrizes,
     });
   };
@@ -352,6 +355,35 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
                 </div>
               </div>
             )}
+          </div>
+
+          {/* Janela de Contestação / Desempate */}
+          <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-wider">
+                <Timer className="w-4 h-4 text-amber-400" /> Janela de Contestação (Bingo Simultâneo)
+              </label>
+              <span className="text-xs font-mono font-bold text-amber-400">{contestWindow}s</span>
+            </div>
+            <p className="text-[11px] text-slate-500 leading-tight">
+              Tempo de espera após o 1º bingo para outros jogadores cantarem na mesma pedra e disputarem na pedra mais alta.
+            </p>
+            <div className="flex gap-2 pt-1">
+              {[5, 10, 15, 20].map((sec) => (
+                <button
+                  type="button"
+                  key={sec}
+                  onClick={() => setContestWindow(sec)}
+                  className={`flex-1 py-1.5 rounded-lg border text-xs font-bold transition-all ${
+                    contestWindow === sec
+                      ? 'border-amber-500 bg-amber-500/20 text-amber-300'
+                      : 'border-slate-800 bg-slate-900 text-slate-400 hover:border-slate-700'
+                  }`}
+                >
+                  {sec}s {sec === 10 ? '★' : ''}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Visibilidade da Sala */}

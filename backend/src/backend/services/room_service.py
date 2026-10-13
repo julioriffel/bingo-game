@@ -4,8 +4,11 @@ import uuid
 import asyncio
 import time
 import logging
-from typing import Dict, Optional, Tuple, List
-from ..models.room import Room, Player, RoomStatus, GameStage, WinCondition, DrawMode, WinnerInfo, Prize, GameLogEntry
+from typing import Dict, Optional, Tuple, List, Any
+from ..models.room import (
+    Room, Player, RoomStatus, GameStage, WinCondition, DrawMode,
+    WinnerInfo, Prize, GameLogEntry, ContestStatus, ContestCandidate, BingoContest
+)
 from ..models.card import BingoCard
 from .bingo_engine import generate_card, check_card_victory, check_card_victory_detailed, get_ball_letter
 from .connection_manager import connection_manager
@@ -16,6 +19,7 @@ class RoomService:
     def __init__(self):
         self.rooms: Dict[str, Room] = {}
         self.draw_tasks: Dict[str, asyncio.Task] = {}
+        self.contest_tasks: Dict[str, asyncio.Task] = {}
 
     def _generate_room_code(self) -> str:
         while True:
@@ -36,6 +40,7 @@ class RoomService:
         draw_interval: float = 5.0,
         draw_mode: DrawMode = DrawMode.AUTO,
         prizes: Optional[List[dict]] = None,
+        contest_window_seconds: float = 10.0,
     ) -> Tuple[Room, Player]:
         room_code = self._generate_room_code()
         pin = self._generate_pin()
@@ -84,6 +89,7 @@ class RoomService:
             drawn_balls=[],
             players={host_id: host_player},
             prizes=room_prizes,
+            contest_window_seconds=contest_window_seconds,
         )
         self.rooms[room_code] = room
         return room, host_player
@@ -308,7 +314,7 @@ class RoomService:
 
     async def call_bingo(
         self, room_code: str, player_id: str, card_id: str
-    ) -> Tuple[bool, str, Optional[WinnerInfo]]:
+    ) -> Tuple[bool, str, Optional[Any]]:
         room = self.rooms.get(room_code)
         if not room or player_id not in room.players:
             return False, "Sala ou jogador inexistente", None
@@ -318,11 +324,11 @@ class RoomService:
         if not target_card:
             return False, "Cartela não pertence ao jogador", None
 
-        # 1. Immediately pause draw loop while verifying
+        # 1. Pause draw loop while contest or verification happens
         was_playing = room.status == RoomStatus.PLAYING
         if was_playing:
             room.status = RoomStatus.PAUSED
-            if room_code in self.draw_tasks:
+            if room_code in self.draw_tasks and not self.draw_tasks[room_code].done():
                 self.draw_tasks[room_code].cancel()
             await connection_manager.broadcast_to_room(room_code, {
                 "type": "game_paused",
@@ -344,13 +350,21 @@ class RoomService:
 
         if not result.is_winner:
             # False alarm, expired timing, or duplicate claim
-            if was_playing:
+            if was_playing and room.active_contest is None:
                 room.status = RoomStatus.PLAYING
                 if room.draw_mode == DrawMode.AUTO:
                     self._start_draw_loop(room_code)
             return False, result.rejection_reason or "Bingo não confirmado.", None
 
-        # 3. Confirmed victory! Mark pattern as claimed on card to prevent duplicate prizes
+        # 3. Format winning numbers sequence (e.g. [12, 24, "FREE", 55, 71])
+        winning_nums: List[int | str] = []
+        for cell in result.winning_cells:
+            if cell.get("row") == 2 and cell.get("col") == 2 and cell.get("number") == 0:
+                winning_nums.append("FREE")
+            else:
+                winning_nums.append(cell.get("number"))
+
+        # Confirmed victory! Mark pattern as claimed on card to prevent duplicate claims
         if result.pattern_id:
             target_card.claimed_patterns.append(result.pattern_id)
             target_card.winning_patterns.append({
@@ -361,145 +375,432 @@ class RoomService:
                 "winning_cells": result.winning_cells,
             })
 
-        # Award next available prize if available
-        awarded_prize: Optional[Prize] = None
-        for p in room.prizes:
-            if p.winner_id is None:
-                p.winner_id = player_id
-                p.winner_name = player.name
-                p.won_at = time.time()
-                awarded_prize = p
-                break
+        target_prize = next((p for p in room.prizes if p.winner_id is None), None)
 
-        # Format winning numbers sequence (e.g. [12, 24, "FREE", 55, 71])
-        winning_nums: List[int | str] = []
-        for cell in result.winning_cells:
-            if cell.get("row") == 2 and cell.get("col") == 2 and cell.get("number") == 0:
-                winning_nums.append("FREE")
-            else:
-                winning_nums.append(cell.get("number"))
-
-        winner_info = WinnerInfo(
+        candidate = ContestCandidate(
             player_id=player_id,
             player_name=player.name,
             card_id=card_id,
             win_type=result.win_type or "Bingo",
-            drawn_count=len(room.drawn_balls),
             pattern_id=result.pattern_id,
             pattern_type=result.pattern_type,
             pattern_name=result.pattern_name,
             line_index=result.line_index,
             winning_cells=result.winning_cells,
             winning_numbers=winning_nums,
-            on_ball=last_ball,
+            prize_title=target_prize.title if target_prize else None,
+        )
+
+        # 4. Check if contest countdown is enabled
+        duration = room.contest_window_seconds
+        if duration <= 0:
+            # Immediate award mode (0s countdown)
+            winner_info = await self._award_contest_winner(room_code, None, candidate, was_tiebreaker=False)
+            return True, result.win_type or "Bingo", winner_info
+
+        # Contest countdown window (> 0s)
+        if room.active_contest is None or room.active_contest.status == ContestStatus.RESOLVED:
+            # First candidate on this ball: start 10s contest window
+            now = time.time()
+            contest = BingoContest(
+                id=f"cnt_{uuid.uuid4().hex[:8]}",
+                ball=last_ball or 0,
+                target_prize_id=target_prize.id if target_prize else None,
+                target_prize_title=target_prize.title if target_prize else None,
+                status=ContestStatus.WINDOW,
+                duration_seconds=duration,
+                window_start_time=now,
+                window_end_time=now + duration,
+                candidates=[candidate],
+            )
+            room.active_contest = contest
+
+            if room_code in self.contest_tasks and not self.contest_tasks[room_code].done():
+                self.contest_tasks[room_code].cancel()
+
+            await connection_manager.broadcast_to_room(room_code, {
+                "type": "bingo_countdown_started",
+                "payload": {
+                    "contest_id": contest.id,
+                    "ball": contest.ball,
+                    "duration_seconds": duration,
+                    "ends_at": contest.window_end_time,
+                    "first_candidate": candidate.model_dump(),
+                    "candidates": [c.model_dump() for c in contest.candidates],
+                    "target_prize": target_prize.model_dump() if target_prize else None,
+                    "message": f"🎉 BINGO cantado por {player.name} na pedra {contest.ball}! Janela de {int(duration)}s iniciada!",
+                }
+            })
+
+            self.contest_tasks[room_code] = asyncio.create_task(
+                self._handle_contest_window(room_code, contest.id, duration)
+            )
+            return True, result.win_type or "Bingo", candidate
+
+        elif room.active_contest.status == ContestStatus.WINDOW:
+            # Already in countdown window on same ball
+            contest = room.active_contest
+            if contest.ball != last_ball:
+                return False, "Disputa anterior ainda em encerramento.", None
+
+            if any(c.player_id == player_id for c in contest.candidates):
+                return False, "Você já registrou seu Bingo nesta disputa!", None
+
+            contest.candidates.append(candidate)
+            await connection_manager.broadcast_to_room(room_code, {
+                "type": "bingo_candidate_joined",
+                "payload": {
+                    "contest_id": contest.id,
+                    "ball": contest.ball,
+                    "new_candidate": candidate.model_dump(),
+                    "candidates": [c.model_dump() for c in contest.candidates],
+                    "total_candidates": len(contest.candidates),
+                    "message": f"⚡ {player.name} também cantou BINGO na pedra {contest.ball}! Total em disputa: {len(contest.candidates)}.",
+                }
+            })
+            return True, result.win_type or "Bingo", candidate
+
+        else:
+            return False, "A janela de contestação para esta pedra já encerrou.", None
+
+    async def _handle_contest_window(self, room_code: str, contest_id: str, duration: float):
+        try:
+            await asyncio.sleep(duration)
+        except asyncio.CancelledError:
+            return
+
+        room = self.rooms.get(room_code)
+        if not room or not room.active_contest or room.active_contest.id != contest_id:
+            return
+
+        contest = room.active_contest
+        if contest.status != ContestStatus.WINDOW:
+            return
+
+        if len(contest.candidates) == 1:
+            # Sole winner
+            await self._award_contest_winner(room_code, contest, contest.candidates[0], was_tiebreaker=False)
+        elif len(contest.candidates) > 1:
+            # Tie! Start stone showdown tiebreaker
+            await self._start_tiebreaker(room_code, contest)
+
+    async def _start_tiebreaker(self, room_code: str, contest: BingoContest):
+        room = self.rooms.get(room_code)
+        if not room:
+            return
+
+        contest.status = ContestStatus.TIEBREAKER
+        # Unique random stone numbers from 1 to 75
+        available = random.sample(range(1, 76), max(12, len(contest.candidates) * 3))
+        contest.available_stones = available
+
+        timeout_seconds = 15.0
+        await connection_manager.broadcast_to_room(room_code, {
+            "type": "bingo_tiebreaker_started",
+            "payload": {
+                "contest_id": contest.id,
+                "ball": contest.ball,
+                "prize_title": contest.target_prize_title,
+                "candidates": [c.model_dump() for c in contest.candidates],
+                "timeout_seconds": timeout_seconds,
+                "stone_options_count": 6,
+                "message": f"⚔️ EMPATE! {len(contest.candidates)} jogadores cantaram Bingo na pedra {contest.ball}! Escolha sua pedra da sorte!",
+            }
+        })
+
+        if room_code in self.contest_tasks and not self.contest_tasks[room_code].done():
+            self.contest_tasks[room_code].cancel()
+        self.contest_tasks[room_code] = asyncio.create_task(
+            self._handle_tiebreaker_timeout(room_code, contest.id, timeout_seconds)
+        )
+
+    async def pick_contest_stone(self, room_code: str, player_id: str, stone_index: Optional[int] = None) -> bool:
+        room = self.rooms.get(room_code)
+        if not room or not room.active_contest:
+            return False
+
+        contest = room.active_contest
+        if contest.status != ContestStatus.TIEBREAKER:
+            return False
+
+        candidate = next((c for c in contest.candidates if c.player_id == player_id), None)
+        if not candidate or candidate.chosen_stone is not None:
+            return False
+
+        if not contest.available_stones:
+            used = {c.chosen_stone for c in contest.candidates if c.chosen_stone is not None}
+            avail = [n for n in range(1, 76) if n not in used]
+            contest.available_stones = random.sample(avail, len(avail))
+
+        # Pop unique stone ensuring no duplicates
+        chosen_stone = contest.available_stones.pop(0)
+        candidate.chosen_stone = chosen_stone
+        candidate.stone_picked_at = time.time()
+
+        all_picked = all(c.chosen_stone is not None for c in contest.candidates)
+
+        await connection_manager.broadcast_to_room(room_code, {
+            "type": "tiebreaker_stone_revealed",
+            "payload": {
+                "contest_id": contest.id,
+                "player_id": player_id,
+                "player_name": candidate.player_name,
+                "chosen_stone": chosen_stone,
+                "candidates": [c.model_dump() for c in contest.candidates],
+                "all_picked": all_picked,
+            }
+        })
+
+        if all_picked:
+            if room_code in self.contest_tasks and not self.contest_tasks[room_code].done():
+                self.contest_tasks[room_code].cancel()
+            await self._resolve_tiebreaker(room_code, contest)
+
+        return True
+
+    async def _handle_tiebreaker_timeout(self, room_code: str, contest_id: str, timeout_seconds: float):
+        try:
+            await asyncio.sleep(timeout_seconds)
+        except asyncio.CancelledError:
+            return
+
+        room = self.rooms.get(room_code)
+        if not room or not room.active_contest or room.active_contest.id != contest_id:
+            return
+
+        contest = room.active_contest
+        if contest.status != ContestStatus.TIEBREAKER:
+            return
+
+        # Auto-pick for any candidate who hasn't chosen
+        for cand in contest.candidates:
+            if cand.chosen_stone is None:
+                if not contest.available_stones:
+                    used = {c.chosen_stone for c in contest.candidates if c.chosen_stone is not None}
+                    avail = [n for n in range(1, 76) if n not in used]
+                    contest.available_stones = random.sample(avail, len(avail))
+                stone = contest.available_stones.pop(0)
+                cand.chosen_stone = stone
+                cand.stone_picked_at = time.time()
+                await connection_manager.broadcast_to_room(room_code, {
+                    "type": "tiebreaker_stone_revealed",
+                    "payload": {
+                        "contest_id": contest.id,
+                        "player_id": cand.player_id,
+                        "player_name": cand.player_name,
+                        "chosen_stone": stone,
+                        "candidates": [c.model_dump() for c in contest.candidates],
+                        "all_picked": True,
+                        "auto_picked": True,
+                    }
+                })
+
+        await self._resolve_tiebreaker(room_code, contest)
+
+    async def _resolve_tiebreaker(self, room_code: str, contest: BingoContest):
+        room = self.rooms.get(room_code)
+        if not room:
+            return
+
+        contest.status = ContestStatus.RESOLVED
+
+        # Pick candidate with highest stone
+        winner_cand = max(contest.candidates, key=lambda c: c.chosen_stone if c.chosen_stone is not None else -1)
+        contest.winner_player_id = winner_cand.player_id
+
+        summary_parts = [f"{c.player_name} (pedra {c.chosen_stone})" for c in contest.candidates]
+        tiebreaker_summary = f"Desempate: {', '.join(summary_parts)} — Vencedor: {winner_cand.player_name} com a maior pedra ({winner_cand.chosen_stone})"
+
+        tb_log = GameLogEntry(
+            id=f"log_{uuid.uuid4().hex[:8]}",
+            event_type="bingo_tiebreaker",
+            order=len(room.game_log) + 1,
+            timestamp=time.time(),
+            ball=contest.ball,
+            player_id=winner_cand.player_id,
+            player_name=winner_cand.player_name,
+            details=tiebreaker_summary,
+            prize_title=contest.target_prize_title,
+        )
+        room.game_log.append(tb_log)
+
+        await connection_manager.broadcast_to_room(room_code, {
+            "type": "tiebreaker_resolved",
+            "payload": {
+                "contest_id": contest.id,
+                "winner_player_id": winner_cand.player_id,
+                "winner_player_name": winner_cand.player_name,
+                "winning_stone": winner_cand.chosen_stone,
+                "candidates": [c.model_dump() for c in contest.candidates],
+                "summary": tiebreaker_summary,
+                "log_entry": tb_log.model_dump(),
+                "game_log": [e.model_dump() for e in room.game_log],
+                "message": f"🏆 {winner_cand.player_name} venceu o desempate com a pedra {winner_cand.chosen_stone}!",
+            }
+        })
+
+        # Short pause for dramatic suspense before awarding prize
+        await asyncio.sleep(2.5)
+        await self._award_contest_winner(room_code, contest, winner_cand, was_tiebreaker=True)
+
+    async def _award_contest_winner(
+        self, room_code: str, contest: Optional[BingoContest], winner_cand: ContestCandidate, was_tiebreaker: bool = False
+    ) -> WinnerInfo:
+        room = self.rooms.get(room_code)
+        if not room:
+            raise ValueError("Sala inexistente")
+
+        # Award next available prize
+        awarded_prize: Optional[Prize] = None
+        for p in room.prizes:
+            if p.winner_id is None:
+                p.winner_id = winner_cand.player_id
+                p.winner_name = winner_cand.player_name
+                p.won_at = time.time()
+                awarded_prize = p
+                break
+
+        on_ball = contest.ball if contest else room.last_drawn_ball
+        winner_info = WinnerInfo(
+            player_id=winner_cand.player_id,
+            player_name=winner_cand.player_name,
+            card_id=winner_cand.card_id,
+            win_type=winner_cand.win_type or "Bingo",
+            drawn_count=len(room.drawn_balls),
+            pattern_id=winner_cand.pattern_id,
+            pattern_type=winner_cand.pattern_type,
+            pattern_name=winner_cand.pattern_name,
+            line_index=winner_cand.line_index,
+            winning_cells=winner_cand.winning_cells,
+            winning_numbers=winner_cand.winning_numbers,
+            on_ball=on_ball,
             prize_title=awarded_prize.title if awarded_prize else None,
         )
         room.winners.append(winner_info)
 
-        # Log awarded bingo event with player name, pattern, and numbers
+        tb_detail = f"Venceu no desempate da pedra maior ({winner_cand.chosen_stone})" if was_tiebreaker and winner_cand.chosen_stone else None
         win_log_entry = GameLogEntry(
             id=f"log_{uuid.uuid4().hex[:8]}",
             event_type="bingo_awarded",
             order=len(room.game_log) + 1,
             timestamp=time.time(),
-            player_id=player_id,
-            player_name=player.name,
-            card_id=card_id,
-            win_type=result.win_type,
-            pattern_name=result.pattern_name,
-            winning_numbers=winning_nums,
+            player_id=winner_cand.player_id,
+            player_name=winner_cand.player_name,
+            card_id=winner_cand.card_id,
+            win_type=winner_cand.win_type,
+            pattern_name=winner_cand.pattern_name,
+            winning_numbers=winner_cand.winning_numbers,
             prize_title=awarded_prize.title if awarded_prize else None,
-            on_ball=last_ball,
+            on_ball=on_ball,
+            details=tb_detail,
         )
         room.game_log.append(win_log_entry)
 
+        # Clear active contest
+        room.active_contest = None
+
         prize_announcement = f" e faturou: 🎁 {awarded_prize.title}!" if awarded_prize else "!"
+        tb_mention = " após desempate da pedra mais alta" if was_tiebreaker else ""
 
         # Check multi-stage progression
         if room.win_condition == WinCondition.MULTI_STAGE and room.stage == GameStage.LINE:
-            # Advance to stage 2: Cartela Cheia (Blackout)
             room.stage = GameStage.BLACKOUT
             await connection_manager.broadcast_to_room(room_code, {
                 "type": "bingo_valid",
                 "payload": {
                     "winner": winner_info.model_dump(),
-                    "card_id": card_id,
-                    "pattern_id": result.pattern_id,
-                    "pattern_type": result.pattern_type,
-                    "pattern_name": result.pattern_name,
-                    "line_index": result.line_index,
-                    "winning_cells": result.winning_cells,
-                    "winning_numbers": winning_nums,
-                    "on_ball": last_ball,
+                    "card_id": winner_cand.card_id,
+                    "pattern_id": winner_cand.pattern_id,
+                    "pattern_type": winner_cand.pattern_type,
+                    "pattern_name": winner_cand.pattern_name,
+                    "line_index": winner_cand.line_index,
+                    "winning_cells": winner_cand.winning_cells,
+                    "winning_numbers": winner_cand.winning_numbers,
+                    "on_ball": on_ball,
+                    "was_tiebreaker": was_tiebreaker,
+                    "winning_stone": winner_cand.chosen_stone if was_tiebreaker else None,
                     "log_entry": win_log_entry.model_dump(),
                     "game_log": [e.model_dump() for e in room.game_log],
                     "awarded_prize": awarded_prize.model_dump() if awarded_prize else None,
                     "prizes": [p.model_dump() for p in room.prizes],
                     "next_stage": "blackout",
                     "stage_name": "Cartela Cheia",
-                    "message": f"Parabéns! {player.name} bateu Linha ({result.pattern_name}){prize_announcement} A partida continua para Cartela Cheia!",
+                    "message": f"Parabéns! {winner_cand.player_name} bateu Linha ({winner_cand.pattern_name}){tb_mention}{prize_announcement} A partida continua para Cartela Cheia!",
                 }
             })
-            # Resume draw loop after short 5-second celebration delay
             asyncio.create_task(self._resume_after_delay(room_code, 5.0))
         else:
-            # Check if there are remaining prizes in LINE mode with multiple prizes
             has_more_prizes = any(p.winner_id is None for p in room.prizes)
             if has_more_prizes and room.win_condition == WinCondition.LINE:
                 await connection_manager.broadcast_to_room(room_code, {
                     "type": "bingo_valid",
                     "payload": {
                         "winner": winner_info.model_dump(),
-                        "card_id": card_id,
-                        "pattern_id": result.pattern_id,
-                        "pattern_type": result.pattern_type,
-                        "pattern_name": result.pattern_name,
-                        "line_index": result.line_index,
-                        "winning_cells": result.winning_cells,
-                        "winning_numbers": winning_nums,
-                        "on_ball": last_ball,
+                        "card_id": winner_cand.card_id,
+                        "pattern_id": winner_cand.pattern_id,
+                        "pattern_type": winner_cand.pattern_type,
+                        "pattern_name": winner_cand.pattern_name,
+                        "line_index": winner_cand.line_index,
+                        "winning_cells": winner_cand.winning_cells,
+                        "winning_numbers": winner_cand.winning_numbers,
+                        "on_ball": on_ball,
+                        "was_tiebreaker": was_tiebreaker,
+                        "winning_stone": winner_cand.chosen_stone if was_tiebreaker else None,
                         "log_entry": win_log_entry.model_dump(),
                         "game_log": [e.model_dump() for e in room.game_log],
                         "awarded_prize": awarded_prize.model_dump() if awarded_prize else None,
                         "prizes": [p.model_dump() for p in room.prizes],
                         "next_stage": None,
                         "game_over": False,
-                        "message": f"Parabéns! {player.name} bateu Linha ({result.pattern_name}){prize_announcement} A partida continua para os próximos prêmios!",
+                        "message": f"Parabéns! {winner_cand.player_name} bateu Linha ({winner_cand.pattern_name}){tb_mention}{prize_announcement} A partida continua para os próximos prêmios!",
                     }
                 })
                 asyncio.create_task(self._resume_after_delay(room_code, 5.0))
             else:
-                # Game complete
                 room.status = RoomStatus.FINISHED
                 room.stage = GameStage.COMPLETED
                 await connection_manager.broadcast_to_room(room_code, {
                     "type": "bingo_valid",
                     "payload": {
                         "winner": winner_info.model_dump(),
-                        "card_id": card_id,
-                        "pattern_id": result.pattern_id,
-                        "pattern_type": result.pattern_type,
-                        "pattern_name": result.pattern_name,
-                        "line_index": result.line_index,
-                        "winning_cells": result.winning_cells,
-                        "winning_numbers": winning_nums,
-                        "on_ball": last_ball,
+                        "card_id": winner_cand.card_id,
+                        "pattern_id": winner_cand.pattern_id,
+                        "pattern_type": winner_cand.pattern_type,
+                        "pattern_name": winner_cand.pattern_name,
+                        "line_index": winner_cand.line_index,
+                        "winning_cells": winner_cand.winning_cells,
+                        "winning_numbers": winner_cand.winning_numbers,
+                        "on_ball": on_ball,
+                        "was_tiebreaker": was_tiebreaker,
+                        "winning_stone": winner_cand.chosen_stone if was_tiebreaker else None,
                         "log_entry": win_log_entry.model_dump(),
                         "game_log": [e.model_dump() for e in room.game_log],
                         "awarded_prize": awarded_prize.model_dump() if awarded_prize else None,
                         "prizes": [p.model_dump() for p in room.prizes],
                         "next_stage": None,
                         "game_over": True,
-                        "message": f"🎉 BINGO! Parabéns {player.name} venceu a partida ({result.pattern_name}){prize_announcement}",
+                        "message": f"🎉 BINGO! Parabéns {winner_cand.player_name} venceu a partida ({winner_cand.pattern_name}){tb_mention}{prize_announcement}",
                     }
                 })
 
-        return True, result.win_type or "Bingo", winner_info
+        return winner_info
+
+    async def resolve_contest_window(self, room_code: str):
+        room = self.rooms.get(room_code)
+        if not room or not room.active_contest or room.active_contest.status != ContestStatus.WINDOW:
+            return
+        contest = room.active_contest
+        if room_code in self.contest_tasks and not self.contest_tasks[room_code].done():
+            self.contest_tasks[room_code].cancel()
+        if len(contest.candidates) == 1:
+            await self._award_contest_winner(room_code, contest, contest.candidates[0], was_tiebreaker=False)
+        elif len(contest.candidates) > 1:
+            await self._start_tiebreaker(room_code, contest)
 
     async def _resume_after_delay(self, room_code: str, delay: float):
         await asyncio.sleep(delay)
         room = self.rooms.get(room_code)
-        if room and room.status == RoomStatus.PAUSED and room.stage != GameStage.COMPLETED:
+        if room and room.status == RoomStatus.PAUSED and room.stage != GameStage.COMPLETED and room.active_contest is None:
             room.status = RoomStatus.PLAYING
             await connection_manager.broadcast_to_room(room_code, {
                 "type": "game_resumed",

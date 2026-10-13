@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import type { GameLogEntry } from '../../types/bingo';
-import { X, Trophy, Copy, Check, Clock, ArrowDownUp, Gift, Award } from 'lucide-react';
+import { X, Trophy, Copy, Check, Clock, ArrowDownUp, Gift, Award, Swords } from 'lucide-react';
 
 interface GameLogModalProps {
   isOpen: boolean;
@@ -63,11 +63,14 @@ export const GameLogModal: React.FC<GameLogModalProps> = ({
       const timeStr = formatTime(entry.timestamp);
       if (entry.event_type === 'ball_drawn') {
         textLines.push(`[${timeStr}] #${entry.order} Pedra Sorteada: ${entry.letter}-${entry.ball}`);
+      } else if (entry.event_type === 'bingo_tiebreaker') {
+        textLines.push(`[${timeStr}] ⚔️ ${entry.details || `Desempate na pedra ${entry.ball}`}`);
       } else if (entry.event_type === 'bingo_awarded') {
         const nums = (entry.winning_numbers || []).join(' - ');
         const prize = entry.prize_title ? ` | Prêmio: ${entry.prize_title}` : '';
+        const tb = entry.details ? ` (${entry.details})` : '';
         textLines.push(
-          `[${timeStr}] 🏆 BINGO! Jogador: ${entry.player_name} | ${entry.pattern_name || entry.win_type} na pedra ${entry.on_ball} | Linha: [ ${nums} ]${prize}`
+          `[${timeStr}] 🏆 BINGO! Jogador: ${entry.player_name} | ${entry.pattern_name || entry.win_type} na pedra ${entry.on_ball} | Linha: [ ${nums} ]${prize}${tb}`
         );
       }
     }
@@ -199,6 +202,29 @@ export const GameLogModal: React.FC<GameLogModalProps> = ({
             </div>
           ) : (
             sorted.map((entry) => {
+              if (entry.event_type === 'bingo_tiebreaker') {
+                return (
+                  <div
+                    key={entry.id}
+                    className="p-3 rounded-2xl bg-indigo-950/40 border border-indigo-500/40 space-y-1"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="p-1 rounded-lg bg-indigo-600 text-white font-black text-xs">
+                          <Swords className="w-3.5 h-3.5" />
+                        </span>
+                        <span className="font-bold text-xs text-indigo-300">
+                          {entry.details || `Desempate da maior pedra na chamada ${entry.ball}`}
+                        </span>
+                      </div>
+                      <span className="text-[11px] font-mono text-slate-400">
+                        {formatTime(entry.timestamp)}
+                      </span>
+                    </div>
+                  </div>
+                );
+              }
+
               if (entry.event_type === 'bingo_awarded') {
                 return (
                   <div
@@ -218,6 +244,13 @@ export const GameLogModal: React.FC<GameLogModalProps> = ({
                         {formatTime(entry.timestamp)}
                       </span>
                     </div>
+
+                    {/* Tiebreaker note if applicable */}
+                    {entry.details && (
+                      <div className="text-[11px] font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-lg border border-amber-500/20 inline-block">
+                        ⚡ {entry.details}
+                      </div>
+                    )}
 
                     {/* Details: Winning numbers */}
                     {entry.winning_numbers && entry.winning_numbers.length > 0 && (

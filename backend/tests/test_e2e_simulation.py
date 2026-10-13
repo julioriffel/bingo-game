@@ -58,4 +58,6 @@ async def test_full_game_simulation():
     assert valid is True
     assert win_type == "Linha"
     assert winner.player_name == "Jogador 1"
+
+    await room_service.resolve_contest_window(code)
     assert len(room.winners) == 1

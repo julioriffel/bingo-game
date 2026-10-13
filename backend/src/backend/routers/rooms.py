@@ -18,6 +18,7 @@ class CreateRoomRequest(BaseModel):
     is_public: bool = True
     draw_interval: float = Field(default=5.0, ge=2.0, le=20.0)
     draw_mode: DrawMode = DrawMode.AUTO
+    contest_window_seconds: float = Field(default=10.0, ge=0.0, le=30.0)
     prizes: list[PrizeInput] = Field(default_factory=list)
 
 class JoinRoomRequest(BaseModel):
@@ -49,6 +50,8 @@ def get_room(room_code: str):
         "win_condition": room.win_condition.value,
         "draw_mode": room.draw_mode.value,
         "draw_interval": room.draw_interval,
+        "contest_window_seconds": room.contest_window_seconds,
+        "active_contest": room.active_contest.model_dump() if room.active_contest else None,
         "drawn_balls": room.drawn_balls,
         "last_drawn_ball": room.last_drawn_ball,
         "player_count": len([p for p in room.players.values() if p.connected]),
@@ -80,6 +83,7 @@ def create_room(req: CreateRoomRequest):
         draw_interval=req.draw_interval,
         draw_mode=req.draw_mode,
         prizes=[p.model_dump() for p in req.prizes],
+        contest_window_seconds=req.contest_window_seconds,
     )
     return {
         "room_code": room.code,

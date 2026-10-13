@@ -148,19 +148,23 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
         {/* Tabs for Multiple Cards */}
         {cards.length > 1 && (
           <div className="flex gap-2 overflow-x-auto pb-1">
-            {cards.map((c, idx) => (
-              <button
-                key={c.id}
-                onClick={() => setActiveCardIndex(idx)}
-                className={`flex-1 py-1.5 px-3 rounded-xl font-bold text-xs transition-all whitespace-nowrap cursor-pointer ${
-                  activeCardIndex === idx
-                    ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
-                    : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                }`}
-              >
-                Cartela {idx + 1}
-              </button>
-            ))}
+            {cards.map((c, idx) => {
+              const hasWon = c.winning_patterns && c.winning_patterns.length > 0;
+              return (
+                <button
+                  key={c.id}
+                  onClick={() => setActiveCardIndex(idx)}
+                  className={`flex-1 py-1.5 px-3 rounded-xl font-bold text-xs transition-all whitespace-nowrap cursor-pointer flex items-center justify-center gap-1.5 ${
+                    activeCardIndex === idx
+                      ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                      : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                  }`}
+                >
+                  <span>Cartela {idx + 1}</span>
+                  {hasWon && <Trophy className="w-3 h-3 text-rose-500 fill-rose-500 shrink-0" />}
+                </button>
+              );
+            })}
           </div>
         )}
       </div>
@@ -173,11 +177,24 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
           assistMode={assistMode}
           onToggleCell={onToggleCell}
           cardIndex={activeCardIndex}
+          winningPatterns={activeCard.winning_patterns}
         />
       )}
 
+      {/* Timing and Duplicate Hint */}
+      <div className="space-y-1">
+        {activeCard?.winning_patterns && activeCard.winning_patterns.length > 0 && (
+          <div className="text-center text-[11px] font-bold text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-xl py-1 px-3 animate-fade-in">
+            🏆 Esta cartela já teve linha premiada! Novas linhas ou cartela cheia continuam válidas.
+          </div>
+        )}
+        <div className="text-center text-[10px] text-slate-400 font-semibold px-2">
+          ⚡ Regra Oficial: Cante BINGO antes do próximo número ser sorteado para validar sua vitória!
+        </div>
+      </div>
+
       {/* Bottom Sticky Action: BINGO Button */}
-      <div className="pt-2 sticky bottom-3 z-30">
+      <div className="pt-1 sticky bottom-3 z-30">
         <button
           onClick={() => activeCard && onCallBingo(activeCard.id)}
           className="w-full py-4 rounded-2xl bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 text-slate-950 font-black text-xl tracking-wider shadow-2xl shadow-amber-500/40 hover:from-amber-400 hover:to-amber-300 active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer glow-bingo"

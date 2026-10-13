@@ -7,7 +7,7 @@ import logging
 from typing import Dict, Optional, Tuple, List
 from ..models.room import Room, Player, RoomStatus, GameStage, WinCondition, DrawMode, WinnerInfo, Prize
 from ..models.card import BingoCard
-from .bingo_engine import generate_card, check_card_victory, get_ball_letter
+from .bingo_engine import generate_card, check_card_victory, check_card_victory_detailed, get_ball_letter
 from .connection_manager import connection_manager
 
 logger = logging.getLogger(__name__)
@@ -317,21 +317,39 @@ class RoomService:
                 "payload": {"reason": f"{player.name} cantou BINGO! Validando..."}
             })
 
-        # 2. Strict audit against server drawn balls
+        # 2. Strict audit against server drawn balls, timing rule, and anti-duplicate prize rule
         drawn_set = set(room.drawn_balls)
-        is_winner, win_type = check_card_victory(
-            target_card, drawn_set, room.win_condition, room.stage
+        last_ball = room.last_drawn_ball if room.last_drawn_ball is not None else (room.drawn_balls[-1] if room.drawn_balls else None)
+
+        result = check_card_victory_detailed(
+            card=target_card,
+            drawn_balls=drawn_set,
+            win_condition=room.win_condition,
+            current_stage=room.stage,
+            last_drawn_ball=last_ball,
+            already_claimed=set(target_card.claimed_patterns),
         )
 
-        if not is_winner or not win_type:
-            # False alarm
+        if not result.is_winner:
+            # False alarm, expired timing, or duplicate claim
             if was_playing:
                 room.status = RoomStatus.PLAYING
                 if room.draw_mode == DrawMode.AUTO:
                     self._start_draw_loop(room_code)
-            return False, "Bingo não confirmado: a cartela não atende aos critérios com as pedras sorteadas.", None
+            return False, result.rejection_reason or "Bingo não confirmado.", None
 
-        # 3. Confirmed victory! Award prize if available
+        # 3. Confirmed victory! Mark pattern as claimed on card to prevent duplicate prizes
+        if result.pattern_id:
+            target_card.claimed_patterns.append(result.pattern_id)
+            target_card.winning_patterns.append({
+                "pattern_id": result.pattern_id,
+                "pattern_type": result.pattern_type,
+                "pattern_name": result.pattern_name,
+                "line_index": result.line_index,
+                "winning_cells": result.winning_cells,
+            })
+
+        # Award next available prize if available
         awarded_prize: Optional[Prize] = None
         for p in room.prizes:
             if p.winner_id is None:
@@ -345,8 +363,12 @@ class RoomService:
             player_id=player_id,
             player_name=player.name,
             card_id=card_id,
-            win_type=win_type,
+            win_type=result.win_type or "Bingo",
             drawn_count=len(room.drawn_balls),
+            pattern_id=result.pattern_id,
+            pattern_type=result.pattern_type,
+            line_index=result.line_index,
+            winning_cells=result.winning_cells,
             prize_title=awarded_prize.title if awarded_prize else None,
         )
         room.winners.append(winner_info)
@@ -361,32 +383,63 @@ class RoomService:
                 "type": "bingo_valid",
                 "payload": {
                     "winner": winner_info.model_dump(),
+                    "card_id": card_id,
+                    "pattern_id": result.pattern_id,
+                    "pattern_type": result.pattern_type,
+                    "line_index": result.line_index,
+                    "winning_cells": result.winning_cells,
                     "awarded_prize": awarded_prize.model_dump() if awarded_prize else None,
                     "prizes": [p.model_dump() for p in room.prizes],
                     "next_stage": "blackout",
                     "stage_name": "Cartela Cheia",
-                    "message": f"Parabéns! {player.name} bateu Linha{prize_announcement} A partida continua para Cartela Cheia!",
+                    "message": f"Parabéns! {player.name} bateu Linha ({result.pattern_name}){prize_announcement} A partida continua para Cartela Cheia!",
                 }
             })
             # Resume draw loop after short 5-second celebration delay
             asyncio.create_task(self._resume_after_delay(room_code, 5.0))
         else:
-            # Game complete
-            room.status = RoomStatus.FINISHED
-            room.stage = GameStage.COMPLETED
-            await connection_manager.broadcast_to_room(room_code, {
-                "type": "bingo_valid",
-                "payload": {
-                    "winner": winner_info.model_dump(),
-                    "awarded_prize": awarded_prize.model_dump() if awarded_prize else None,
-                    "prizes": [p.model_dump() for p in room.prizes],
-                    "next_stage": None,
-                    "game_over": True,
-                    "message": f"🎉 BINGO! Parabéns {player.name} venceu a partida{prize_announcement}",
-                }
-            })
+            # Check if there are remaining prizes in LINE mode with multiple prizes
+            has_more_prizes = any(p.winner_id is None for p in room.prizes)
+            if has_more_prizes and room.win_condition == WinCondition.LINE:
+                await connection_manager.broadcast_to_room(room_code, {
+                    "type": "bingo_valid",
+                    "payload": {
+                        "winner": winner_info.model_dump(),
+                        "card_id": card_id,
+                        "pattern_id": result.pattern_id,
+                        "pattern_type": result.pattern_type,
+                        "line_index": result.line_index,
+                        "winning_cells": result.winning_cells,
+                        "awarded_prize": awarded_prize.model_dump() if awarded_prize else None,
+                        "prizes": [p.model_dump() for p in room.prizes],
+                        "next_stage": None,
+                        "game_over": False,
+                        "message": f"Parabéns! {player.name} bateu Linha ({result.pattern_name}){prize_announcement} A partida continua para os próximos prêmios!",
+                    }
+                })
+                asyncio.create_task(self._resume_after_delay(room_code, 5.0))
+            else:
+                # Game complete
+                room.status = RoomStatus.FINISHED
+                room.stage = GameStage.COMPLETED
+                await connection_manager.broadcast_to_room(room_code, {
+                    "type": "bingo_valid",
+                    "payload": {
+                        "winner": winner_info.model_dump(),
+                        "card_id": card_id,
+                        "pattern_id": result.pattern_id,
+                        "pattern_type": result.pattern_type,
+                        "line_index": result.line_index,
+                        "winning_cells": result.winning_cells,
+                        "awarded_prize": awarded_prize.model_dump() if awarded_prize else None,
+                        "prizes": [p.model_dump() for p in room.prizes],
+                        "next_stage": None,
+                        "game_over": True,
+                        "message": f"🎉 BINGO! Parabéns {player.name} venceu a partida ({result.pattern_name}){prize_announcement}",
+                    }
+                })
 
-        return True, win_type, winner_info
+        return True, result.win_type or "Bingo", winner_info
 
     async def _resume_after_delay(self, room_code: str, delay: float):
         await asyncio.sleep(delay)

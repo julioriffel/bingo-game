@@ -68,3 +68,9 @@ async def test_room_with_variable_prizes_and_winner_attribution():
 
     # Verify second prize is still available
     assert room.prizes[1].winner_name is None
+
+    # 5. Attempting to claim 2nd prize with the SAME winning line MUST be rejected!
+    valid_dup, reason_dup, _ = await room_service.call_bingo(code, player.id, card.id)
+    assert valid_dup is False
+    # In multi_stage, stage advanced to blackout, so line is not accepted
+    assert ("não atende aos critérios" in reason_dup) or ("já foi premiada" in reason_dup)

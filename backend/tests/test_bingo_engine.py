@@ -90,3 +90,80 @@ def test_check_card_victory_multistage():
     win_bo_full, t_bo = check_card_victory(card, drawn_all, WinCondition.MULTI_STAGE, GameStage.BLACKOUT)
     assert win_bo_full is True
     assert t_bo == "Cartela Cheia"
+
+def test_timing_rule_late_bingo_rejected():
+    from backend.services.bingo_engine import check_card_victory_detailed
+    card = generate_card("c-timing-late")
+    # Row 0 numbers
+    row_0_nums = [card.grid[0][c].number for c in range(5)]
+    completing_ball = row_0_nums[-1]
+    
+    # Next number drawn is 75 (assuming it's not in row 0)
+    next_ball = 75 if 75 not in row_0_nums else 1
+    
+    drawn = set(row_0_nums) | {next_ball}
+    
+    # The user attempts to call Bingo on next_ball (which is not part of the winning row)
+    res = check_card_victory_detailed(
+        card=card,
+        drawn_balls=drawn,
+        win_condition=WinCondition.LINE,
+        current_stage=GameStage.LINE,
+        last_drawn_ball=next_ball,
+    )
+    assert res.is_winner is False
+    assert "Bingo expirado" in res.rejection_reason
+
+def test_timing_rule_timely_bingo_accepted():
+    from backend.services.bingo_engine import check_card_victory_detailed
+    card = generate_card("c-timing-ok")
+    row_0_nums = [card.grid[0][c].number for c in range(5)]
+    completing_ball = row_0_nums[-1]
+    
+    drawn = set(row_0_nums)
+    
+    res = check_card_victory_detailed(
+        card=card,
+        drawn_balls=drawn,
+        win_condition=WinCondition.LINE,
+        current_stage=GameStage.LINE,
+        last_drawn_ball=completing_ball,
+    )
+    assert res.is_winner is True
+    assert res.pattern_id == "row_0"
+    assert res.pattern_type == "row"
+    assert res.line_index == 0
+    assert len(res.winning_cells) == 5
+    assert all(c["row"] == 0 for c in res.winning_cells)
+
+def test_anti_duplicate_prize_rule():
+    from backend.services.bingo_engine import check_card_victory_detailed
+    card = generate_card("c-anti-dup")
+    row_1_nums = [card.grid[1][c].number for c in range(5)]
+    completing_ball = row_1_nums[-1]
+    
+    drawn = set(row_1_nums)
+    
+    # 1. First claim succeeds
+    res1 = check_card_victory_detailed(
+        card=card,
+        drawn_balls=drawn,
+        win_condition=WinCondition.LINE,
+        current_stage=GameStage.LINE,
+        last_drawn_ball=completing_ball,
+        already_claimed=set(),
+    )
+    assert res1.is_winner is True
+    assert res1.pattern_id == "row_1"
+    
+    # 2. Second claim with the same line is rejected
+    res2 = check_card_victory_detailed(
+        card=card,
+        drawn_balls=drawn,
+        win_condition=WinCondition.LINE,
+        current_stage=GameStage.LINE,
+        last_drawn_ball=completing_ball,
+        already_claimed={"row_1"},
+    )
+    assert res2.is_winner is False
+    assert "já foi premiada" in res2.rejection_reason

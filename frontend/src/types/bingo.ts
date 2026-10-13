@@ -7,10 +7,26 @@ export interface BingoCell {
   marked: boolean;
 }
 
+export interface WinningCell {
+  row: number;
+  col: number;
+  number: number;
+}
+
+export interface WinningPattern {
+  pattern_id: string;
+  pattern_type: 'row' | 'col' | 'diag_main' | 'diag_anti' | 'blackout';
+  pattern_name?: string;
+  line_index?: number;
+  winning_cells: WinningCell[];
+}
+
 export interface BingoCard {
   id: string;
   grid: BingoCell[][];
   hash: string;
+  claimed_patterns?: string[];
+  winning_patterns?: WinningPattern[];
 }
 
 export interface Prize {
@@ -36,6 +52,10 @@ export interface WinnerInfo {
   card_id: string;
   win_type: string;
   drawn_count: number;
+  pattern_id?: string | null;
+  pattern_type?: 'row' | 'col' | 'diag_main' | 'diag_anti' | 'blackout' | null;
+  line_index?: number | null;
+  winning_cells?: WinningCell[];
   prize_title?: string | null;
   timestamp?: number;
 }

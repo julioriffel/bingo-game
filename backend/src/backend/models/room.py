@@ -48,6 +48,10 @@ class WinnerInfo(BaseModel):
     card_id: str
     win_type: str
     drawn_count: int
+    pattern_id: str | None = None
+    pattern_type: str | None = None
+    line_index: int | None = None
+    winning_cells: list[dict] = Field(default_factory=list)
     prize_title: str | None = None
     timestamp: float = Field(default_factory=time.time)
 

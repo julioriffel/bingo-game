@@ -13,6 +13,8 @@ class BingoCard(BaseModel):
     id: str
     grid: list[list[BingoCell]]  # 5 rows x 5 columns
     hash: str
+    claimed_patterns: list[str] = Field(default_factory=list)
+    winning_patterns: list[dict] = Field(default_factory=list)
     created_at: float = Field(default_factory=time.time)
 
     def numbers_set(self) -> set[int]:

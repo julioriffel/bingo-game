@@ -154,6 +154,32 @@ export function App() {
           if (payload) {
             const winner = payload.winner;
             const awardedPrize = payload.awarded_prize;
+            const cardId = payload.card_id || winner?.card_id;
+
+            if (payload.pattern_id || winner?.pattern_id) {
+              const newPattern = {
+                pattern_id: payload.pattern_id || winner?.pattern_id,
+                pattern_type: payload.pattern_type || winner?.pattern_type || 'row',
+                pattern_name: winner?.win_type || 'Linha',
+                line_index: payload.line_index ?? winner?.line_index,
+                winning_cells: payload.winning_cells || winner?.winning_cells || [],
+              };
+
+              setCards((prev) =>
+                prev.map((c) => {
+                  if (c.id === cardId) {
+                    const existing = c.winning_patterns || [];
+                    const exists = existing.some((p) => p.pattern_id === newPattern.pattern_id);
+                    return {
+                      ...c,
+                      winning_patterns: exists ? existing : [...existing, newPattern],
+                    };
+                  }
+                  return c;
+                })
+              );
+            }
+
             if (soundEnabled) playVictory();
             confetti({
               particleCount: 200,

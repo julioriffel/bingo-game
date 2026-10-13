@@ -5,7 +5,7 @@ import asyncio
 import time
 import logging
 from typing import Dict, Optional, Tuple, List
-from ..models.room import Room, Player, RoomStatus, GameStage, WinCondition, DrawMode, WinnerInfo, Prize
+from ..models.room import Room, Player, RoomStatus, GameStage, WinCondition, DrawMode, WinnerInfo, Prize, GameLogEntry
 from ..models.card import BingoCard
 from .bingo_engine import generate_card, check_card_victory, check_card_victory_detailed, get_ball_letter
 from .connection_manager import connection_manager
@@ -203,6 +203,17 @@ class RoomService:
         room.last_drawn_ball = ball
         letter = get_ball_letter(ball)
 
+        # Log drawn number
+        log_entry = GameLogEntry(
+            id=f"log_{uuid.uuid4().hex[:8]}",
+            event_type="ball_drawn",
+            order=len(room.game_log) + 1,
+            timestamp=time.time(),
+            ball=ball,
+            letter=letter,
+        )
+        room.game_log.append(log_entry)
+
         await connection_manager.broadcast_to_room(room_code, {
             "type": "ball_drawn",
             "payload": {
@@ -210,6 +221,7 @@ class RoomService:
                 "letter": letter,
                 "drawn_count": len(room.drawn_balls),
                 "history": room.drawn_balls,
+                "log_entry": log_entry.model_dump(),
             }
         })
         return ball, letter
@@ -359,6 +371,14 @@ class RoomService:
                 awarded_prize = p
                 break
 
+        # Format winning numbers sequence (e.g. [12, 24, "FREE", 55, 71])
+        winning_nums: List[int | str] = []
+        for cell in result.winning_cells:
+            if cell.get("row") == 2 and cell.get("col") == 2 and cell.get("number") == 0:
+                winning_nums.append("FREE")
+            else:
+                winning_nums.append(cell.get("number"))
+
         winner_info = WinnerInfo(
             player_id=player_id,
             player_name=player.name,
@@ -367,11 +387,31 @@ class RoomService:
             drawn_count=len(room.drawn_balls),
             pattern_id=result.pattern_id,
             pattern_type=result.pattern_type,
+            pattern_name=result.pattern_name,
             line_index=result.line_index,
             winning_cells=result.winning_cells,
+            winning_numbers=winning_nums,
+            on_ball=last_ball,
             prize_title=awarded_prize.title if awarded_prize else None,
         )
         room.winners.append(winner_info)
+
+        # Log awarded bingo event with player name, pattern, and numbers
+        win_log_entry = GameLogEntry(
+            id=f"log_{uuid.uuid4().hex[:8]}",
+            event_type="bingo_awarded",
+            order=len(room.game_log) + 1,
+            timestamp=time.time(),
+            player_id=player_id,
+            player_name=player.name,
+            card_id=card_id,
+            win_type=result.win_type,
+            pattern_name=result.pattern_name,
+            winning_numbers=winning_nums,
+            prize_title=awarded_prize.title if awarded_prize else None,
+            on_ball=last_ball,
+        )
+        room.game_log.append(win_log_entry)
 
         prize_announcement = f" e faturou: 🎁 {awarded_prize.title}!" if awarded_prize else "!"
 
@@ -386,8 +426,13 @@ class RoomService:
                     "card_id": card_id,
                     "pattern_id": result.pattern_id,
                     "pattern_type": result.pattern_type,
+                    "pattern_name": result.pattern_name,
                     "line_index": result.line_index,
                     "winning_cells": result.winning_cells,
+                    "winning_numbers": winning_nums,
+                    "on_ball": last_ball,
+                    "log_entry": win_log_entry.model_dump(),
+                    "game_log": [e.model_dump() for e in room.game_log],
                     "awarded_prize": awarded_prize.model_dump() if awarded_prize else None,
                     "prizes": [p.model_dump() for p in room.prizes],
                     "next_stage": "blackout",
@@ -408,8 +453,13 @@ class RoomService:
                         "card_id": card_id,
                         "pattern_id": result.pattern_id,
                         "pattern_type": result.pattern_type,
+                        "pattern_name": result.pattern_name,
                         "line_index": result.line_index,
                         "winning_cells": result.winning_cells,
+                        "winning_numbers": winning_nums,
+                        "on_ball": last_ball,
+                        "log_entry": win_log_entry.model_dump(),
+                        "game_log": [e.model_dump() for e in room.game_log],
                         "awarded_prize": awarded_prize.model_dump() if awarded_prize else None,
                         "prizes": [p.model_dump() for p in room.prizes],
                         "next_stage": None,
@@ -429,8 +479,13 @@ class RoomService:
                         "card_id": card_id,
                         "pattern_id": result.pattern_id,
                         "pattern_type": result.pattern_type,
+                        "pattern_name": result.pattern_name,
                         "line_index": result.line_index,
                         "winning_cells": result.winning_cells,
+                        "winning_numbers": winning_nums,
+                        "on_ball": last_ball,
+                        "log_entry": win_log_entry.model_dump(),
+                        "game_log": [e.model_dump() for e in room.game_log],
                         "awarded_prize": awarded_prize.model_dump() if awarded_prize else None,
                         "prizes": [p.model_dump() for p in room.prizes],
                         "next_stage": None,

@@ -54,10 +54,30 @@ export interface WinnerInfo {
   drawn_count: number;
   pattern_id?: string | null;
   pattern_type?: 'row' | 'col' | 'diag_main' | 'diag_anti' | 'blackout' | null;
+  pattern_name?: string | null;
   line_index?: number | null;
   winning_cells?: WinningCell[];
+  winning_numbers?: (number | string)[];
+  on_ball?: number | null;
   prize_title?: string | null;
   timestamp?: number;
+}
+
+export interface GameLogEntry {
+  id: string;
+  event_type: 'ball_drawn' | 'bingo_awarded';
+  order: number;
+  timestamp: number;
+  ball?: number | null;
+  letter?: string | null;
+  player_id?: string | null;
+  player_name?: string | null;
+  card_id?: string | null;
+  win_type?: string | null;
+  pattern_name?: string | null;
+  winning_numbers?: (number | string)[];
+  prize_title?: string | null;
+  on_ball?: number | null;
 }
 
 export interface PublicRoom {
@@ -82,6 +102,7 @@ export interface GameState {
   draw_mode: 'auto' | 'manual';
   winners: WinnerInfo[];
   prizes: Prize[];
+  game_log: GameLogEntry[];
 }
 
 export interface WSMessage<T = any> {

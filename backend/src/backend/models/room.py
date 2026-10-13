@@ -50,10 +50,29 @@ class WinnerInfo(BaseModel):
     drawn_count: int
     pattern_id: str | None = None
     pattern_type: str | None = None
+    pattern_name: str | None = None
     line_index: int | None = None
     winning_cells: list[dict] = Field(default_factory=list)
+    winning_numbers: list[int | str] = Field(default_factory=list)
+    on_ball: int | None = None
     prize_title: str | None = None
     timestamp: float = Field(default_factory=time.time)
+
+class GameLogEntry(BaseModel):
+    id: str
+    event_type: str  # "ball_drawn" | "bingo_awarded"
+    order: int       # Sequential order: 1, 2, 3...
+    timestamp: float = Field(default_factory=time.time)
+    ball: int | None = None
+    letter: str | None = None
+    player_id: str | None = None
+    player_name: str | None = None
+    card_id: str | None = None
+    win_type: str | None = None
+    pattern_name: str | None = None
+    winning_numbers: list[int | str] = Field(default_factory=list)
+    prize_title: str | None = None
+    on_ball: int | None = None
 
 class Room(BaseModel):
     code: str
@@ -74,4 +93,5 @@ class Room(BaseModel):
     players: dict[str, Player] = Field(default_factory=dict)
     winners: list[WinnerInfo] = Field(default_factory=list)
     prizes: list[Prize] = Field(default_factory=list)
+    game_log: list[GameLogEntry] = Field(default_factory=list)
     created_at: float = Field(default_factory=time.time)

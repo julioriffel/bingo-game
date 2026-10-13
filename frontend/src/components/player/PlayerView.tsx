@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import type { BingoCard as BingoCardType, GameState } from '../../types/bingo';
 import { BingoCard } from './BingoCard';
-import { Sparkles, Eye, Trophy, Bell, Gift, Crown } from 'lucide-react';
+import { GameLogModal } from '../common/GameLogModal';
+import { Sparkles, Eye, Trophy, Bell, Gift, Crown, ScrollText } from 'lucide-react';
 
 interface PlayerViewProps {
   cards: BingoCardType[];
@@ -22,6 +23,7 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
 }) => {
   const [activeCardIndex, setActiveCardIndex] = useState(0);
   const [assistMode, setAssistMode] = useState(true);
+  const [isLogOpen, setIsLogOpen] = useState(false);
 
   const activeCard = cards[activeCardIndex] || cards[0];
   const lastBalls = [...gameState.drawn_balls].reverse().slice(0, 5);
@@ -69,19 +71,30 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
           </div>
         </div>
 
-        {/* Assistant Toggle */}
-        <button
-          onClick={() => setAssistMode(!assistMode)}
-          className={`p-2.5 rounded-xl border flex flex-col items-center justify-center transition-colors ${
-            assistMode
-              ? 'bg-amber-500/10 border-amber-500/30 text-amber-400'
-              : 'bg-slate-800/80 border-slate-700 text-slate-500'
-          }`}
-          title="Destacar pedras sorteadas na cartela"
-        >
-          <Eye className="w-4 h-4" />
-          <span className="text-[9px] font-bold mt-0.5">Assistente</span>
-        </button>
+        {/* Action Buttons: Log & Assistant */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          <button
+            onClick={() => setIsLogOpen(true)}
+            className="p-2 sm:p-2.5 rounded-xl border bg-slate-800/80 hover:bg-slate-700/80 border-slate-700 text-slate-300 hover:text-amber-300 transition-colors flex flex-col items-center justify-center cursor-pointer"
+            title="Log oficial de sorteios e ganhadores"
+          >
+            <ScrollText className="w-4 h-4 text-amber-400" />
+            <span className="text-[9px] font-bold mt-0.5">Log ({gameState.game_log?.length || 0})</span>
+          </button>
+
+          <button
+            onClick={() => setAssistMode(!assistMode)}
+            className={`p-2 sm:p-2.5 rounded-xl border flex flex-col items-center justify-center transition-colors cursor-pointer ${
+              assistMode
+                ? 'bg-amber-500/10 border-amber-500/30 text-amber-400'
+                : 'bg-slate-800/80 border-slate-700 text-slate-500'
+            }`}
+            title="Destacar pedras sorteadas na cartela"
+          >
+            <Eye className="w-4 h-4" />
+            <span className="text-[9px] font-bold mt-0.5">Assistente</span>
+          </button>
+        </div>
       </div>
 
       {/* In-Game Notifications Banner */}
@@ -203,6 +216,14 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
           BINGO!
         </button>
       </div>
+
+      {/* Game Log Modal */}
+      <GameLogModal
+        isOpen={isLogOpen}
+        onClose={() => setIsLogOpen(false)}
+        gameLog={gameState.game_log || []}
+        roomCode={gameState.code}
+      />
     </div>
   );
 };

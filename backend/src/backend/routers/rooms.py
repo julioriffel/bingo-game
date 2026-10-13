@@ -54,6 +54,19 @@ def get_room(room_code: str):
         "player_count": len([p for p in room.players.values() if p.connected]),
         "winners": [w.model_dump() for w in room.winners],
         "prizes": [p.model_dump() for p in room.prizes],
+        "game_log": [e.model_dump() for e in room.game_log],
+    }
+
+@router.get("/{room_code}/log")
+def get_room_log(room_code: str):
+    room = room_service.get_room(room_code.upper())
+    if not room:
+        raise HTTPException(status_code=404, detail="Sala não encontrada")
+    return {
+        "room_code": room.code,
+        "total_drawn": len(room.drawn_balls),
+        "total_winners": len(room.winners),
+        "game_log": [e.model_dump() for e in room.game_log],
     }
 
 @router.post("")

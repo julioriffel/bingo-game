@@ -34,6 +34,7 @@ export function App() {
     draw_mode: 'auto',
     winners: [],
     prizes: [],
+    game_log: [],
   });
 
   // UI & Modals State
@@ -96,6 +97,7 @@ export function App() {
               draw_mode: payload.draw_mode || prev.draw_mode,
               winners: payload.winners || prev.winners,
               prizes: payload.prizes || prev.prizes || [],
+              game_log: payload.game_log || prev.game_log || [],
             }));
           }
           break;
@@ -115,6 +117,7 @@ export function App() {
             status: 'playing',
             stage: payload?.stage || 'line',
             prizes: payload?.prizes || prev.prizes || [],
+            game_log: payload?.game_log || [],
           }));
           setStatusBanner('A partida começou! Boa sorte!');
           if (voiceEnabled) speakText('A partida começou! Boa sorte a todos!');
@@ -128,6 +131,7 @@ export function App() {
               ...prev,
               drawn_balls: payload.history || [...prev.drawn_balls, ball],
               last_drawn_ball: ball,
+              game_log: payload.log_entry ? [...prev.game_log, payload.log_entry] : prev.game_log,
             }));
             if (soundEnabled) playBallDrop();
             if (voiceEnabled) speakBall(ball, letter);
@@ -187,12 +191,15 @@ export function App() {
               origin: { y: 0.55 },
             });
 
-            if (payload.prizes) {
-              setGameState((prev) => ({
-                ...prev,
-                prizes: payload.prizes,
-              }));
-            }
+            setGameState((prev) => ({
+              ...prev,
+              prizes: payload.prizes || prev.prizes,
+              game_log: payload.game_log
+                ? payload.game_log
+                : payload.log_entry
+                ? [...prev.game_log, payload.log_entry]
+                : prev.game_log,
+            }));
 
             const prizeMention = awardedPrize ? ` e levou: 🎁 ${awardedPrize.title}!` : '!';
             const defaultMsg = `🎉 BINGO confirmado para ${winner?.player_name}${prizeMention}`;
@@ -285,6 +292,7 @@ export function App() {
           description: p.description || '',
           order: idx + 1,
         })),
+        game_log: [],
       }));
 
       // Host enters TV / Telão mode first
@@ -404,6 +412,16 @@ export function App() {
     disconnect();
     setRoomCode(null);
     setCurrentView('lobby');
+    setGameState((prev) => ({
+      ...prev,
+      code: '',
+      status: 'lobby',
+      drawn_balls: [],
+      last_drawn_ball: null,
+      winners: [],
+      prizes: [],
+      game_log: [],
+    }));
     fetchRooms();
   };
 

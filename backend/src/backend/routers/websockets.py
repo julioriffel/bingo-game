@@ -67,6 +67,7 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str):
                             "draw_mode": room.draw_mode.value,
                             "winners": [w.model_dump() for w in room.winners],
                             "prizes": [p.model_dump() for p in room.prizes],
+                            "game_log": [e.model_dump() for e in room.game_log],
                         }
                     })
 

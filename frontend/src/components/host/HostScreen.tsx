@@ -1,8 +1,9 @@
-import React, { useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import type { GameState, Player } from '../../types/bingo';
 import { DrawingGlobe } from './DrawingGlobe';
 import { MasterBoard } from './MasterBoard';
 import { PrizesShowcase } from './PrizesShowcase';
+import { GameLogModal } from '../common/GameLogModal';
 import {
   Play,
   Pause,
@@ -13,6 +14,7 @@ import {
   Trophy,
   Sliders,
   Tv,
+  ScrollText,
 } from 'lucide-react';
 
 interface HostScreenProps {
@@ -55,6 +57,8 @@ export const HostScreen: React.FC<HostScreenProps> = ({
   onAddPrize,
   onRemovePrize,
 }) => {
+  const [isLogOpen, setIsLogOpen] = useState(false);
+
   // Spacebar shortcut to draw next or toggle pause
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -114,8 +118,8 @@ export const HostScreen: React.FC<HostScreenProps> = ({
           </div>
         </div>
 
-        {/* Stage Objective & Players online */}
-        <div className="flex items-center gap-6">
+        {/* Stage Objective & Players online & Log button */}
+        <div className="flex items-center gap-4 sm:gap-6 flex-wrap justify-end">
           <div className="text-right">
             <div className="text-xs text-slate-400 flex items-center gap-1.5 justify-end">
               <Trophy className="w-3.5 h-3.5 text-amber-400" />
@@ -130,7 +134,7 @@ export const HostScreen: React.FC<HostScreenProps> = ({
             </div>
           </div>
 
-          <div className="h-10 w-px bg-slate-800" />
+          <div className="h-10 w-px bg-slate-800 hidden sm:block" />
 
           <div className="text-right">
             <div className="text-xs text-slate-400 flex items-center gap-1.5 justify-end">
@@ -141,6 +145,22 @@ export const HostScreen: React.FC<HostScreenProps> = ({
               {activePlayers.length} Jogadores
             </div>
           </div>
+
+          <div className="h-10 w-px bg-slate-800 hidden sm:block" />
+
+          <button
+            onClick={() => setIsLogOpen(true)}
+            className="p-2 sm:px-3 sm:py-2 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold text-xs flex items-center gap-2 cursor-pointer transition-colors shadow-md"
+            title="Abrir Log Oficial da Partida"
+          >
+            <ScrollText className="w-4 h-4 text-amber-400" />
+            <span className="hidden sm:inline">Log da Partida</span>
+            {gameState.game_log?.length > 0 && (
+              <span className="bg-amber-500 text-slate-950 font-black text-[10px] px-1.5 py-0.5 rounded-full font-mono">
+                {gameState.game_log.length}
+              </span>
+            )}
+          </button>
         </div>
       </div>
 
@@ -183,6 +203,51 @@ export const HostScreen: React.FC<HostScreenProps> = ({
             drawnBalls={gameState.drawn_balls}
             lastBall={gameState.last_drawn_ball}
           />
+
+          {/* LIVE AUDIT TICKER */}
+          <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-4 shadow-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3 w-full sm:w-auto">
+              <div className="p-2.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-400 shrink-0">
+                <ScrollText className="w-4 h-4" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-[10px] uppercase font-bold tracking-wider text-slate-400">
+                  Último Registro de Auditoria
+                </div>
+                {gameState.game_log && gameState.game_log.length > 0 ? (
+                  <div className="text-xs font-medium text-slate-200 truncate">
+                    {(() => {
+                      const latest = gameState.game_log[gameState.game_log.length - 1];
+                      if (latest.event_type === 'bingo_awarded') {
+                        return (
+                          <span className="text-amber-300 font-bold">
+                            🏆 {latest.player_name} bateu {latest.pattern_name || latest.win_type}! Linha: [ {latest.winning_numbers?.join(' - ')} ]
+                          </span>
+                        );
+                      }
+                      return (
+                        <span>
+                          Pedra #{latest.order}: <strong className="text-amber-400 font-mono">{latest.letter}-{latest.ball}</strong> sorteada
+                        </span>
+                      );
+                    })()}
+                  </div>
+                ) : (
+                  <div className="text-xs text-slate-500 italic">
+                    Aguardando primeiros sorteios...
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <button
+              onClick={() => setIsLogOpen(true)}
+              className="w-full sm:w-auto px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs flex items-center justify-center gap-2 border border-slate-700 transition-colors cursor-pointer shrink-0"
+            >
+              <ScrollText className="w-3.5 h-3.5 text-amber-400" />
+              <span>Ver Log Completo ({gameState.game_log?.length || 0})</span>
+            </button>
+          </div>
 
           {/* PRIZES SHOWCASE */}
           <PrizesShowcase
@@ -264,6 +329,14 @@ export const HostScreen: React.FC<HostScreenProps> = ({
           </div>
         </div>
       )}
+
+      {/* Game Log Modal */}
+      <GameLogModal
+        isOpen={isLogOpen}
+        onClose={() => setIsLogOpen(false)}
+        gameLog={gameState.game_log || []}
+        roomCode={gameState.code}
+      />
     </div>
   );
 };

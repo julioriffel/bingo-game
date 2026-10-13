@@ -1,5 +1,5 @@
 import React from 'react';
-import { Dices, Wifi, WifiOff, Volume2, VolumeX, Tv, ArrowLeft, Users, ShieldAlert } from 'lucide-react';
+import { Dices, Wifi, WifiOff, Volume2, VolumeX, Tv, ArrowLeft, Users, ShieldAlert, BookOpen } from 'lucide-react';
 
 interface HeaderProps {
   title?: string;
@@ -13,6 +13,7 @@ interface HeaderProps {
   userCount?: number;
   onOpenUsers?: () => void;
   managerInactive?: boolean;
+  onOpenHelp?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -27,6 +28,7 @@ export const Header: React.FC<HeaderProps> = ({
   userCount,
   onOpenUsers,
   managerInactive = false,
+  onOpenHelp,
 }) => {
   return (
     <header className="w-full bg-slate-900/80 backdrop-blur border-b border-slate-800 px-4 py-3 flex items-center justify-between sticky top-0 z-40">
@@ -34,7 +36,7 @@ export const Header: React.FC<HeaderProps> = ({
         {onBackToLobby && (
           <button
             onClick={onBackToLobby}
-            className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors"
+            className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors cursor-pointer"
             title="Sair para o Lobby"
           >
             <ArrowLeft className="w-5 h-5" />
@@ -58,6 +60,18 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
 
       <div className="flex items-center gap-2">
+        {/* Help & Rules Button */}
+        {onOpenHelp && (
+          <button
+            onClick={onOpenHelp}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold transition-all cursor-pointer shadow-sm"
+            title="Ver Regras Oficiais e Manuais"
+          >
+            <BookOpen className="w-4 h-4 text-amber-400" />
+            <span className="hidden md:inline">Regras & Ajuda</span>
+          </button>
+        )}
+
         {/* Manager Inactive Alert Pill (Visible to players if manager is inactive for 2+ min) */}
         {!isHost && managerInactive && onOpenUsers && (
           <button

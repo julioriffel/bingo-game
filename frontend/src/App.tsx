@@ -8,6 +8,7 @@ import { PlayerView } from './components/player/PlayerView';
 import { HostScreen } from './components/host/HostScreen';
 import { TiebreakerModal } from './components/common/TiebreakerModal';
 import { UsersListModal } from './components/common/UsersListModal';
+import { HelpModal } from './components/common/HelpModal';
 import { useWebSocket } from './hooks/useWebSocket';
 import { useAudio } from './hooks/useAudio';
 import { useSpeech } from './hooks/useSpeech';
@@ -50,6 +51,13 @@ export function App() {
   const [statusBanner, setStatusBanner] = useState<string | null>(null);
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
   const [voiceEnabled, setVoiceEnabled] = useState<boolean>(true);
+  const [isHelpOpen, setIsHelpOpen] = useState<boolean>(false);
+  const [helpDefaultTab, setHelpDefaultTab] = useState<'rules' | 'player' | 'manager'>('rules');
+
+  const handleOpenHelp = (tab: 'rules' | 'player' | 'manager' = 'rules') => {
+    setHelpDefaultTab(tab);
+    setIsHelpOpen(true);
+  };
 
   // User activity tracker
   const lastActivityRef = useRef<number>(Date.now());
@@ -639,6 +647,7 @@ export function App() {
         userCount={gameState.player_count ?? players.filter((p) => !p.is_host).length}
         onOpenUsers={roomCode ? () => setIsUsersOpen(true) : undefined}
         managerInactive={gameState.manager_inactive || (gameState.manager_last_active_at ? (Date.now() / 1000 - gameState.manager_last_active_at >= 120) : false)}
+        onOpenHelp={() => handleOpenHelp('rules')}
       />
 
       <main className="flex-1 flex flex-col items-center justify-start p-3 sm:p-6">
@@ -650,6 +659,7 @@ export function App() {
             onRefresh={fetchRooms}
             onOpenCreate={() => setIsCreateOpen(true)}
             onJoinRoom={(code) => setJoinModalCode(code)}
+            onOpenHelp={() => handleOpenHelp('rules')}
           />
         )}
 
@@ -730,6 +740,13 @@ export function App() {
         managerLastActiveAt={gameState.manager_last_active_at}
         managerInactive={gameState.manager_inactive}
         onClaimManager={handleClaimManager}
+      />
+
+      {/* HELP & RULES MODAL */}
+      <HelpModal
+        isOpen={isHelpOpen}
+        onClose={() => setIsHelpOpen(false)}
+        defaultTab={helpDefaultTab}
       />
     </div>
   );

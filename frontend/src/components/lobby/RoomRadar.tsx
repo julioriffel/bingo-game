@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import type { PublicRoom } from '../../types/bingo';
-import { Radio, Users, Trophy, Play, KeyRound, Sparkles, Plus } from 'lucide-react';
+import { Radio, Users, Trophy, Play, KeyRound, Sparkles, Plus, BookOpen } from 'lucide-react';
 
 interface RoomRadarProps {
   rooms: PublicRoom[];
@@ -8,6 +8,7 @@ interface RoomRadarProps {
   onRefresh: () => void;
   onOpenCreate: () => void;
   onJoinRoom: (roomCode: string, pin?: string) => void;
+  onOpenHelp?: () => void;
 }
 
 export const RoomRadar: React.FC<RoomRadarProps> = ({
@@ -16,6 +17,7 @@ export const RoomRadar: React.FC<RoomRadarProps> = ({
   onRefresh,
   onOpenCreate,
   onJoinRoom,
+  onOpenHelp,
 }) => {
   const [pinCode, setPinCode] = useState('');
 
@@ -44,6 +46,15 @@ export const RoomRadar: React.FC<RoomRadarProps> = ({
           </div>
 
           <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
+            {onOpenHelp && (
+              <button
+                type="button"
+                onClick={onOpenHelp}
+                className="px-5 py-3.5 rounded-xl font-bold text-sm bg-slate-800/90 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-all flex items-center justify-center gap-2 cursor-pointer shadow-md"
+              >
+                <BookOpen className="w-4 h-4 text-amber-400" /> REGRAS & COMO JOGAR
+              </button>
+            )}
             <button
               onClick={onOpenCreate}
               className="px-6 py-3.5 rounded-xl font-black text-sm bg-gradient-to-r from-amber-500 to-amber-400 text-slate-950 hover:from-amber-400 hover:to-amber-300 transition-all shadow-xl shadow-amber-500/25 flex items-center justify-center gap-2 cursor-pointer"

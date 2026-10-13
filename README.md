@@ -42,6 +42,18 @@ uv run pytest -v
 
 ---
 
+## 📚 Documentação Técnica Completa
+
+A documentação detalhada do sistema, arquitetura, servidor, regras de negócio e guia para agentes de IA está organizada na pasta [`docs/`](docs/):
+
+- 🏛️ [**Arquitetura do Sistema**](docs/architecture.md): Visão de engenharia, frontend React 19, backend Python 3.14 FastAPI e WebSockets.
+- 🎲 [**Regras de Negócio & Game Engine**](docs/business-rules.md): Regras de vitória, timing da batida, janela de 10s, showdown da pedra mais alta, prêmios e manager.
+- 🔌 [**API REST & Protocolo WebSocket**](docs/api-and-websocket.md): Especificação completa de todos os endpoints HTTP e eventos WS.
+- 🖥️ [**Servidor, Infraestrutura & Deploy**](docs/server-and-deployment.md): OCI ARM64, Traefik v3, Docker multi-stage, Portainer e GitHub Actions.
+- 🤖 [**Guia de Agentes de IA (AGENTS.md)**](AGENTS.md): Diretrizes rígidas, convenções e comandos para desenvolvedores e agentes autônomos.
+
+---
+
 ## 🐳 Deploy e Produção
 
 Deploy automatizado via **GitHub Actions** em push na branch `main`:
@@ -49,3 +61,4 @@ Deploy automatizado via **GitHub Actions** em push na branch `main`:
 2. Construção de imagem Docker Multi-Arch (`linux/amd64,linux/arm64`).
 3. Publicação no **GitHub Container Registry** (`ghcr.io/julioriffel/bingo-game:latest`).
 4. Trigger de webhook no **Portainer** para atualização zero-downtime com proxy reverso e SSL automático via **Traefik**.
+

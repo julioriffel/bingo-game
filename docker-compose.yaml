@@ -1,0 +1,46 @@
+services:
+  # ─────────────────────────────────────────────────────────
+  # Bingo Multiplayer (Produção) — Python 3.14 FastAPI + React
+  # ─────────────────────────────────────────────────────────
+  bingo:
+    image: ghcr.io/julioriffel/bingo-game:${BINGO_IMAGE_TAG:-latest}
+    pull_policy: always
+    container_name: bingo-game
+    restart: always
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - ${BINGO_DATA_PATH:-/home/ubuntu/bingo/data}:/app/data
+    environment:
+      - PORT=8000
+      - HOST=0.0.0.0
+      - USE_REDIS=true
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/3}
+      - SECRET_KEY=${BINGO_SECRET_KEY:-bingo-super-secret-key-2026}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=server_public"
+
+      # ── HTTP router (port 80 -> redirect to HTTPS) ──
+      - "traefik.http.routers.bingo-http.rule=Host(`${BINGO_DOMAIN:-bingo.bolsadedados.com.br}`)"
+      - "traefik.http.routers.bingo-http.entrypoints=web"
+      - "traefik.http.routers.bingo-http.middlewares=bingo-redirect-https"
+      - "traefik.http.middlewares.bingo-redirect-https.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.bingo-redirect-https.redirectscheme.permanent=true"
+
+      # ── HTTPS router (port 443 -> TLS Let's Encrypt) ──
+      - "traefik.http.routers.bingo.rule=Host(`${BINGO_DOMAIN:-bingo.bolsadedados.com.br}`)"
+      - "traefik.http.routers.bingo.entrypoints=websecure"
+      - "traefik.http.routers.bingo.tls.certresolver=letsencrypt"
+      - "traefik.http.services.bingo.loadbalancer.server.port=8000"
+    networks:
+      - public
+      - internal
+
+networks:
+  public:
+    name: server_public
+    external: true
+  internal:
+    name: server_internal
+    external: true

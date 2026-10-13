@@ -1,0 +1,269 @@
+import React, { useEffect } from 'react';
+import type { GameState, Player } from '../../types/bingo';
+import { DrawingGlobe } from './DrawingGlobe';
+import { MasterBoard } from './MasterBoard';
+import { PrizesShowcase } from './PrizesShowcase';
+import {
+  Play,
+  Pause,
+  SkipForward,
+  Volume2,
+  VolumeX,
+  Users,
+  Trophy,
+  Sliders,
+  Tv,
+} from 'lucide-react';
+
+interface HostScreenProps {
+  gameState: GameState;
+  players: Player[];
+  roomPin?: string;
+  isHost: boolean;
+  onStartGame: () => void;
+  onTogglePause: () => void;
+  onDrawNext: () => void;
+  onSetSpeed: (interval: number) => void;
+  voiceEnabled: boolean;
+  onToggleVoice: () => void;
+  onBackToPlayerView?: () => void;
+  onAddPrize?: (title: string, description: string) => void;
+  onRemovePrize?: (prizeId: string) => void;
+}
+
+function getLetterForBall(ball: number | null): string {
+  if (!ball) return '';
+  if (ball <= 15) return 'B';
+  if (ball <= 30) return 'I';
+  if (ball <= 45) return 'N';
+  if (ball <= 60) return 'G';
+  return 'O';
+}
+
+export const HostScreen: React.FC<HostScreenProps> = ({
+  gameState,
+  players,
+  roomPin,
+  isHost,
+  onStartGame,
+  onTogglePause,
+  onDrawNext,
+  onSetSpeed,
+  voiceEnabled,
+  onToggleVoice,
+  onBackToPlayerView,
+  onAddPrize,
+  onRemovePrize,
+}) => {
+  // Spacebar shortcut to draw next or toggle pause
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code === 'Space' && isHost) {
+        e.preventDefault();
+        if (gameState.status === 'lobby') {
+          onStartGame();
+        } else if (gameState.draw_mode === 'manual' && gameState.status === 'playing') {
+          onDrawNext();
+        } else {
+          onTogglePause();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [gameState, isHost, onStartGame, onDrawNext, onTogglePause]);
+
+  const letter = getLetterForBall(gameState.last_drawn_ball);
+  const activePlayers = players.filter((p) => p.connected);
+
+  return (
+    <div className="w-full max-w-7xl mx-auto p-4 sm:p-6 space-y-6">
+      {/* Top TV Banner */}
+      <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-2xl flex flex-col md:flex-row items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <div className="p-3 rounded-2xl bg-indigo-600/20 text-indigo-400 border border-indigo-500/30">
+            <Tv className="w-8 h-8" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-black uppercase tracking-wider text-slate-400">
+                MODO TELÃO (TV / PROJETOR)
+              </span>
+              <span
+                className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
+                  gameState.status === 'playing'
+                    ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
+                    : gameState.status === 'paused'
+                    ? 'bg-amber-950 text-amber-400 border border-amber-800'
+                    : 'bg-slate-800 text-slate-400'
+                }`}
+              >
+                {gameState.status.toUpperCase()}
+              </span>
+            </div>
+            <div className="flex items-baseline gap-3 mt-1">
+              <h2 className="text-3xl sm:text-4xl font-black font-mono tracking-widest text-amber-400">
+                {gameState.code}
+              </h2>
+              {roomPin && (
+                <span className="text-sm font-mono font-bold text-slate-400 bg-slate-800 px-2 py-0.5 rounded-lg">
+                  PIN: {roomPin}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Stage Objective & Players online */}
+        <div className="flex items-center gap-6">
+          <div className="text-right">
+            <div className="text-xs text-slate-400 flex items-center gap-1.5 justify-end">
+              <Trophy className="w-3.5 h-3.5 text-amber-400" />
+              <span>Etapa Atual:</span>
+            </div>
+            <div className="text-base sm:text-lg font-black text-amber-300">
+              {gameState.stage === 'line'
+                ? 'LINHA'
+                : gameState.stage === 'blackout'
+                ? 'CARTELA CHEIA'
+                : 'AGUARDANDO INÍCIO'}
+            </div>
+          </div>
+
+          <div className="h-10 w-px bg-slate-800" />
+
+          <div className="text-right">
+            <div className="text-xs text-slate-400 flex items-center gap-1.5 justify-end">
+              <Users className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Conectados:</span>
+            </div>
+            <div className="text-base sm:text-lg font-black text-slate-100">
+              {activePlayers.length} Jogadores
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Grid: Globe on Left + Master Board & Prizes on Right */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        <div className="lg:col-span-4 flex flex-col gap-4">
+          <DrawingGlobe
+            lastBall={gameState.last_drawn_ball}
+            letter={letter}
+            isDrawing={gameState.status === 'playing'}
+          />
+
+          {/* Voice & Switch Button */}
+          <div className="flex gap-2">
+            <button
+              onClick={onToggleVoice}
+              className={`flex-1 py-2.5 px-3 rounded-2xl border text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                voiceEnabled
+                  ? 'bg-amber-500/10 border-amber-500/30 text-amber-300'
+                  : 'bg-slate-900 border-slate-800 text-slate-500'
+              }`}
+            >
+              {voiceEnabled ? <Volume2 className="w-4 h-4 text-amber-400" /> : <VolumeX className="w-4 h-4" />}
+              <span>Voz do Cantador</span>
+            </button>
+
+            {onBackToPlayerView && (
+              <button
+                onClick={onBackToPlayerView}
+                className="py-2.5 px-4 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition-colors cursor-pointer"
+              >
+                Minha Cartela
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="lg:col-span-8 flex flex-col gap-6">
+          <MasterBoard
+            drawnBalls={gameState.drawn_balls}
+            lastBall={gameState.last_drawn_ball}
+          />
+
+          {/* PRIZES SHOWCASE */}
+          <PrizesShowcase
+            prizes={gameState.prizes || []}
+            isHost={isHost}
+            onAddPrize={onAddPrize}
+            onRemovePrize={onRemovePrize}
+          />
+        </div>
+      </div>
+
+      {/* Host Controls Panel */}
+      {isHost && (
+        <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-5 shadow-2xl flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+              <Sliders className="w-4 h-4 text-amber-400" /> Controles da Mesa
+            </span>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            {gameState.status === 'lobby' ? (
+              <button
+                onClick={onStartGame}
+                className="px-6 py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-sm transition-all shadow-lg shadow-emerald-500/20 flex items-center gap-2 cursor-pointer"
+              >
+                <Play className="w-5 h-5 fill-current" /> INICIAR PARTIDA
+              </button>
+            ) : (
+              <>
+                <button
+                  onClick={onTogglePause}
+                  className={`px-5 py-2.5 rounded-2xl font-black text-sm transition-all flex items-center gap-2 cursor-pointer ${
+                    gameState.status === 'paused'
+                      ? 'bg-emerald-500 text-slate-950 hover:bg-emerald-400 shadow-lg shadow-emerald-500/20'
+                      : 'bg-amber-500 text-slate-950 hover:bg-amber-400 shadow-lg shadow-amber-500/20'
+                  }`}
+                >
+                  {gameState.status === 'paused' ? (
+                    <>
+                      <Play className="w-4 h-4 fill-current" /> RETOMAR
+                    </>
+                  ) : (
+                    <>
+                      <Pause className="w-4 h-4 fill-current" /> PAUSAR
+                    </>
+                  )}
+                </button>
+
+                <button
+                  onClick={onDrawNext}
+                  disabled={gameState.status === 'finished'}
+                  className="px-5 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-black text-sm transition-all shadow-lg shadow-indigo-600/30 flex items-center gap-2 disabled:opacity-50 cursor-pointer"
+                >
+                  <SkipForward className="w-4 h-4" /> SORTEAR PRÓXIMA
+                </button>
+              </>
+            )}
+
+            {/* Speed Buttons */}
+            {gameState.draw_mode === 'auto' && (
+              <div className="flex items-center gap-1.5 bg-slate-950 p-1 rounded-2xl border border-slate-800">
+                <span className="text-[10px] font-bold text-slate-500 px-2 uppercase">Velocidade:</span>
+                {[3, 5, 7, 10].map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => onSetSpeed(s)}
+                    className={`px-2.5 py-1 rounded-xl text-xs font-bold transition-all ${
+                      gameState.draw_interval === s
+                        ? 'bg-amber-500 text-slate-950'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    {s}s
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};

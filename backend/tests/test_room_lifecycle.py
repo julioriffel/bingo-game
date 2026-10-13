@@ -13,6 +13,13 @@ def test_health_endpoint():
     assert data["status"] == "healthy"
     assert data["python_version"] == "3.14"
 
+    res_root = client.get("/health")
+    assert res_root.status_code == 200
+    assert res_root.json()["status"] == "healthy"
+
+    head_res = client.head("/health")
+    assert head_res.status_code == 200
+
 def test_create_and_join_room_api():
     # 1. Create Room via API
     res = client.post("/api/rooms", json={

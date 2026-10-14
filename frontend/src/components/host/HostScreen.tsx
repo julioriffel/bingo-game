@@ -17,6 +17,7 @@ import {
   ScrollText,
   Crown,
   Keyboard,
+  Lock,
 } from 'lucide-react';
 
 interface HostScreenProps {
@@ -63,6 +64,11 @@ export const HostScreen: React.FC<HostScreenProps> = ({
 }) => {
   const [isLogOpen, setIsLogOpen] = useState(false);
 
+  const isContestActive = Boolean(
+    gameState.active_contest &&
+    (gameState.active_contest.status === 'window' || gameState.active_contest.status === 'tiebreaker')
+  );
+
   // Spacebar shortcut to draw next or toggle pause
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -70,6 +76,9 @@ export const HostScreen: React.FC<HostScreenProps> = ({
         // Prevent default spacebar scroll when interacting with controls
         if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
         e.preventDefault();
+        // Block actions during active prize contest / tiebreaker window
+        if (isContestActive) return;
+
         if (gameState.status === 'lobby') {
           onStartGame();
         } else if (gameState.draw_mode === 'manual' && gameState.status === 'playing') {
@@ -81,7 +90,7 @@ export const HostScreen: React.FC<HostScreenProps> = ({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [gameState, isHost, onStartGame, onDrawNext, onTogglePause]);
+  }, [gameState, isHost, isContestActive, onStartGame, onDrawNext, onTogglePause]);
 
   const letter = getLetterForBall(gameState.last_drawn_ball);
   // Manager is NOT counted in active bingo players
@@ -200,6 +209,7 @@ export const HostScreen: React.FC<HostScreenProps> = ({
             lastBall={gameState.last_drawn_ball}
             letter={letter}
             isDrawing={gameState.status === 'playing'}
+            isContestActive={isContestActive}
           />
 
           {/* Voice & Switch Button */}
@@ -302,13 +312,20 @@ export const HostScreen: React.FC<HostScreenProps> = ({
             <span className="font-display text-xs font-black uppercase tracking-wider text-slate-300 flex items-center gap-2">
               <Sliders className="w-4 h-4 text-amber-400" /> Controles da Mesa
             </span>
-            <div className="hidden md:flex items-center gap-1.5 text-[11px] text-slate-400 bg-slate-950/80 px-2.5 py-1 rounded-xl border border-slate-800">
-              <Keyboard className="w-3.5 h-3.5 text-amber-400" />
-              <span>Atalho:</span>
-              <kbd className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 font-mono text-[10px] text-amber-300 font-bold">
-                ESPAÇO
-              </kbd>
-            </div>
+            {isContestActive ? (
+              <div className="flex items-center gap-1.5 text-[11px] text-amber-300 bg-amber-500/15 px-2.5 py-1 rounded-xl border border-amber-500/40 animate-pulse font-bold">
+                <Lock className="w-3.5 h-3.5 text-amber-400" />
+                <span>Validação do Prêmio em Andamento</span>
+              </div>
+            ) : (
+              <div className="hidden md:flex items-center gap-1.5 text-[11px] text-slate-400 bg-slate-950/80 px-2.5 py-1 rounded-xl border border-slate-800">
+                <Keyboard className="w-3.5 h-3.5 text-amber-400" />
+                <span>Atalho:</span>
+                <kbd className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 font-mono text-[10px] text-amber-300 font-bold">
+                  ESPAÇO
+                </kbd>
+              </div>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
@@ -325,13 +342,21 @@ export const HostScreen: React.FC<HostScreenProps> = ({
                 <button
                   type="button"
                   onClick={onTogglePause}
-                  className={`min-h-[44px] px-5 py-2.5 rounded-2xl font-display font-black text-sm tracking-wide transition-all flex items-center gap-2 cursor-pointer active:scale-95 ${
-                    gameState.status === 'paused'
-                      ? 'bg-gradient-to-r from-emerald-500 to-emerald-400 text-slate-950 hover:from-emerald-400 hover:to-emerald-300 shadow-lg shadow-emerald-500/25'
-                      : 'bg-gradient-to-r from-amber-500 to-amber-400 text-slate-950 hover:from-amber-400 hover:to-amber-300 shadow-lg shadow-amber-500/25'
+                  disabled={isContestActive}
+                  title={isContestActive ? 'Partida pausada para validação do prêmio' : undefined}
+                  className={`min-h-[44px] px-5 py-2.5 rounded-2xl font-display font-black text-sm tracking-wide transition-all flex items-center gap-2 ${
+                    isContestActive
+                      ? 'bg-slate-800 text-slate-400 border border-slate-700 cursor-not-allowed opacity-70'
+                      : gameState.status === 'paused'
+                      ? 'bg-gradient-to-r from-emerald-500 to-emerald-400 text-slate-950 hover:from-emerald-400 hover:to-emerald-300 shadow-lg shadow-emerald-500/25 cursor-pointer active:scale-95'
+                      : 'bg-gradient-to-r from-amber-500 to-amber-400 text-slate-950 hover:from-amber-400 hover:to-amber-300 shadow-lg shadow-amber-500/25 cursor-pointer active:scale-95'
                   }`}
                 >
-                  {gameState.status === 'paused' ? (
+                  {isContestActive ? (
+                    <>
+                      <Pause className="w-4 h-4 fill-current text-amber-400" /> PAUSADO P/ VALIDAÇÃO
+                    </>
+                  ) : gameState.status === 'paused' ? (
                     <>
                       <Play className="w-4 h-4 fill-current" /> RETOMAR
                     </>
@@ -345,10 +370,29 @@ export const HostScreen: React.FC<HostScreenProps> = ({
                 <button
                   type="button"
                   onClick={onDrawNext}
-                  disabled={gameState.status === 'finished'}
-                  className="min-h-[44px] px-5 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white font-display font-black text-sm tracking-wide transition-all shadow-lg shadow-indigo-600/30 flex items-center gap-2 disabled:opacity-50 cursor-pointer"
+                  disabled={gameState.status === 'finished' || isContestActive}
+                  title={
+                    isContestActive
+                      ? 'Sorteio bloqueado durante a validação do prêmio'
+                      : gameState.status === 'finished'
+                      ? 'Partida finalizada'
+                      : 'Sortear próxima pedra'
+                  }
+                  className={`min-h-[44px] px-5 py-2.5 rounded-2xl font-display font-black text-sm tracking-wide transition-all shadow-lg flex items-center gap-2 ${
+                    isContestActive
+                      ? 'bg-amber-950/70 border-2 border-amber-500/60 text-amber-300 shadow-amber-950/40 cursor-not-allowed opacity-90'
+                      : 'bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white shadow-indigo-600/30 disabled:opacity-50 cursor-pointer'
+                  }`}
                 >
-                  <SkipForward className="w-4 h-4" /> SORTEAR PRÓXIMA
+                  {isContestActive ? (
+                    <>
+                      <Lock className="w-4 h-4 text-amber-400 animate-pulse" /> SORTEIO BLOQUEADO
+                    </>
+                  ) : (
+                    <>
+                      <SkipForward className="w-4 h-4" /> SORTEAR PRÓXIMA
+                    </>
+                  )}
                 </button>
               </>
             )}

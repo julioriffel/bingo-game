@@ -214,10 +214,14 @@ class RoomService:
                 room = self.rooms.get(room_code)
                 if not room or room.status != RoomStatus.PLAYING:
                     break
+                if room.active_contest and room.active_contest.status in (ContestStatus.WINDOW, ContestStatus.TIEBREAKER):
+                    break
 
                 await asyncio.sleep(room.draw_interval)
                 room = self.rooms.get(room_code)
                 if not room or room.status != RoomStatus.PLAYING:
+                    break
+                if room.active_contest and room.active_contest.status in (ContestStatus.WINDOW, ContestStatus.TIEBREAKER):
                     break
 
                 try:
@@ -238,6 +242,16 @@ class RoomService:
         room = self.rooms.get(room_code)
         if not room:
             return None
+
+        # Block drawing while prize contest window or tiebreaker is ongoing
+        if room.active_contest and room.active_contest.status in (ContestStatus.WINDOW, ContestStatus.TIEBREAKER):
+            logger.warning(
+                "Sorteio bloqueado na sala %s: disputa de prêmio em andamento (status=%s).",
+                room_code,
+                room.active_contest.status.value,
+            )
+            return None
+
         if not room.remaining_balls:
             room.status = RoomStatus.FINISHED
             await connection_manager.broadcast_to_room(room_code, {
@@ -288,6 +302,8 @@ class RoomService:
                 "payload": {"is_paused": True}
             })
         elif room.status == RoomStatus.PAUSED:
+            if room.active_contest and room.active_contest.status in (ContestStatus.WINDOW, ContestStatus.TIEBREAKER):
+                raise ValueError("Não é possível retomar a partida durante a janela de contestação do prêmio.")
             room.status = RoomStatus.PLAYING
             await connection_manager.broadcast_to_room(room_code, {
                 "type": "game_resumed",

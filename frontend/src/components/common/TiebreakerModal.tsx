@@ -80,12 +80,15 @@ export const TiebreakerModal: React.FC<TiebreakerModalProps> = ({
                 <Clock className="w-5 h-5" />
               </span>
               <div>
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5 flex-wrap">
                   <span className="font-display text-[10px] font-black uppercase tracking-wider text-amber-400">
                     Janela de Validação do Bingo
                   </span>
                   <span className="text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-md border border-amber-500/40">
                     Pedra {contest.ball}
+                  </span>
+                  <span className="text-[10px] font-display font-black bg-rose-500/20 text-rose-300 px-2 py-0.5 rounded-md border border-rose-500/40 uppercase tracking-wider">
+                    Sorteio Pausado
                   </span>
                 </div>
                 <h4 className="text-sm sm:text-base font-display font-black text-slate-100">

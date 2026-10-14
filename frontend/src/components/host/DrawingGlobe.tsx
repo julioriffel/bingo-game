@@ -1,16 +1,18 @@
 import React from 'react';
-import { Sparkles } from 'lucide-react';
+import { Sparkles, Lock } from 'lucide-react';
 
 interface DrawingGlobeProps {
   lastBall: number | null;
   letter: string;
   isDrawing?: boolean;
+  isContestActive?: boolean;
 }
 
 export const DrawingGlobe: React.FC<DrawingGlobeProps> = ({
   lastBall,
   letter,
   isDrawing = false,
+  isContestActive = false,
 }) => {
   return (
     <div
@@ -22,7 +24,7 @@ export const DrawingGlobe: React.FC<DrawingGlobeProps> = ({
       <div className="absolute inset-0 bg-gradient-to-b from-amber-500/10 via-transparent to-indigo-500/10 pointer-events-none" />
 
       {/* Globe Cage Ring */}
-      <div className="relative w-52 h-52 sm:w-60 sm:h-60 rounded-full border-4 border-amber-500/50 p-3 shadow-2xl flex items-center justify-center bg-slate-950/90 ring-4 ring-amber-500/10">
+      <div className={`relative w-52 h-52 sm:w-60 sm:h-60 rounded-full border-4 ${isContestActive ? 'border-amber-400 ring-4 ring-amber-500/30' : 'border-amber-500/50 ring-4 ring-amber-500/10'} p-3 shadow-2xl flex items-center justify-center bg-slate-950/90 transition-all`}>
         <div className="absolute inset-2 rounded-full border-2 border-dashed border-amber-400/30 animate-spin-slow pointer-events-none" />
         <div className="absolute inset-6 rounded-full border border-amber-400/20 pointer-events-none" />
 
@@ -48,19 +50,30 @@ export const DrawingGlobe: React.FC<DrawingGlobeProps> = ({
           <div className="flex flex-col items-center justify-center text-center p-4">
             <Sparkles className="w-10 h-10 text-amber-400/60 animate-pulse mb-2" />
             <span className="font-display text-xs font-bold text-slate-400 uppercase tracking-widest">
-              {isDrawing ? 'Sorteando...' : 'Globo Pronto'}
+              {isContestActive ? 'Sorteio Bloqueado' : isDrawing ? 'Sorteando...' : 'Globo Pronto'}
             </span>
           </div>
         )}
       </div>
 
-      {lastBall && (
+      {isContestActive ? (
+        <div className="mt-4 flex flex-col items-center gap-2">
+          {lastBall && (
+            <span className="inline-block px-4 py-1.5 rounded-full bg-amber-500/20 border border-amber-500/50 text-amber-300 font-display font-black text-sm tracking-widest">
+              {letter} - {lastBall}
+            </span>
+          )}
+          <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-amber-500/20 border border-amber-500/70 text-amber-300 font-display font-black text-xs uppercase tracking-wider animate-pulse shadow-md">
+            <Lock className="w-3.5 h-3.5" /> Sorteio Bloqueado (Validação de Prêmio)
+          </span>
+        </div>
+      ) : lastBall ? (
         <div className="mt-5 text-center">
           <span className="inline-block px-5 py-2 rounded-full bg-amber-500/20 border border-amber-500/50 text-amber-300 font-display font-black text-base tracking-widest shadow-md">
             {letter} - {lastBall}
           </span>
         </div>
-      )}
+      ) : null}
     </div>
   );
 };

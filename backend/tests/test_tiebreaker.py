@@ -167,3 +167,85 @@ async def test_tiebreaker_timeout_auto_picks_stone_for_idle_player():
     # Marcos (50 > 20) wins!
     assert len(room.winners) == 1
     assert room.winners[0].player_name == "Marcos"
+
+@pytest.mark.asyncio
+async def test_draw_and_pause_blocked_during_contest_window_and_tiebreaker():
+    room, host = room_service.create_room(
+        host_name="Host Security",
+        win_condition=WinCondition.LINE,
+        contest_window_seconds=10.0,
+        prizes=[
+            {"title": "Prêmio 1"},
+            {"title": "Prêmio Final"}
+        ]
+    )
+    code = room.code
+    _, p1 = room_service.join_room(code, "Jogador 1", card_count=1)
+    _, p2 = room_service.join_room(code, "Jogador 2", card_count=1)
+    await room_service.start_game(code, host.id)
+
+    # Prepare winning line for p1 and p2 on ball 42
+    common_ball = 42
+    p1.cards[0].grid[0][-1].number = common_ball
+    p2.cards[0].grid[0][-1].number = common_ball
+    for c in p1.cards[0].grid[0][:-1]:
+        if not c.is_free:
+            room.drawn_balls.append(c.number)
+    for c in p2.cards[0].grid[0][:-1]:
+        if not c.is_free:
+            room.drawn_balls.append(c.number)
+    room.drawn_balls.append(common_ball)
+    room.last_drawn_ball = common_ball
+
+    drawn_count_before = len(room.drawn_balls)
+
+    # 1. Player 1 calls Bingo -> WINDOW started
+    ok, _, _ = await room_service.call_bingo(code, p1.id, p1.cards[0].id)
+    assert ok is True
+    assert room.active_contest is not None
+    assert room.active_contest.status == ContestStatus.WINDOW
+
+    # Verify drawing a ball during WINDOW is strictly BLOCKED
+    draw_result = await room_service.draw_next_ball(code)
+    assert draw_result is None
+    assert len(room.drawn_balls) == drawn_count_before
+
+    # Verify toggle_pause cannot resume during WINDOW
+    with pytest.raises(ValueError, match="Não é possível retomar a partida durante a janela de contestação"):
+        await room_service.toggle_pause(code, host.id)
+
+    # 2. Player 2 also calls Bingo -> joins contest
+    ok2, _, _ = await room_service.call_bingo(code, p2.id, p2.cards[0].id)
+    assert ok2 is True
+    assert len(room.active_contest.candidates) == 2
+
+    # Still blocked during WINDOW
+    assert await room_service.draw_next_ball(code) is None
+
+    # Advance window -> transitions to TIEBREAKER
+    await room_service.resolve_contest_window(code)
+    assert room.active_contest is not None
+    assert room.active_contest.status == ContestStatus.TIEBREAKER
+
+    # Verify drawing a ball during TIEBREAKER is strictly BLOCKED
+    assert await room_service.draw_next_ball(code) is None
+    assert len(room.drawn_balls) == drawn_count_before
+
+    # Verify toggle_pause cannot resume during TIEBREAKER
+    with pytest.raises(ValueError, match="Não é possível retomar a partida durante a janela de contestação"):
+        await room_service.toggle_pause(code, host.id)
+
+    # Pick stones for candidates
+    room.active_contest.available_stones = [70, 30]
+    await room_service.pick_contest_stone(code, p1.id)
+    await room_service.pick_contest_stone(code, p2.id)
+
+    # Contest resolved and prize awarded
+    assert room.active_contest is None
+    assert len(room.winners) == 1
+
+    # Drawing a ball is now unblocked
+    ball_drawn = await room_service.draw_next_ball(code)
+    assert ball_drawn is not None
+    assert len(room.drawn_balls) == drawn_count_before + 1
+

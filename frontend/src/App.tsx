@@ -518,6 +518,13 @@ export function App() {
           setStatusBanner(payload?.reason || 'Bingo inválido!');
           break;
 
+        case 'error':
+          if (payload?.message) {
+            if (soundEnabled) playError();
+            setStatusBanner(payload.message);
+          }
+          break;
+
         case 'game_over':
           setGameState((prev) => ({ ...prev, status: 'finished' }));
           setStatusBanner('Partida encerrada!');

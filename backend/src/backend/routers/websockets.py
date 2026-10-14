@@ -2,6 +2,7 @@ import json
 import logging
 import time
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from ..models.room import ContestStatus
 from ..services.connection_manager import connection_manager
 from ..services.room_service import room_service
 
@@ -137,7 +138,13 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str):
 
             elif msg_type == "draw_next":
                 host_id = payload.get("host_id")
-                if current_player_id == room.host_id and room.host_id == host_id:
+                current_room = room_service.get_room(code) or room
+                if current_player_id == current_room.host_id and current_room.host_id == host_id:
+                    if current_room.active_contest and current_room.active_contest.status in (ContestStatus.WINDOW, ContestStatus.TIEBREAKER):
+                        await connection_manager.send_personal(websocket, {
+                            "type": "error", "payload": {"message": "Sorteio bloqueado durante a validação do prêmio."}
+                        })
+                        continue
                     await room_service.draw_next_ball(code)
 
             elif msg_type == "toggle_pause":

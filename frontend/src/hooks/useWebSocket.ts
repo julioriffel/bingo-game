@@ -4,19 +4,25 @@ import type { WSMessage } from '../types/bingo';
 interface UseWebSocketOptions {
   roomCode: string | null;
   onMessage?: (message: WSMessage) => void;
+  onRoomNotFound?: () => void;
   autoConnect?: boolean;
 }
 
-export function useWebSocket({ roomCode, onMessage, autoConnect = true }: UseWebSocketOptions) {
+export function useWebSocket({ roomCode, onMessage, onRoomNotFound, autoConnect = true }: UseWebSocketOptions) {
   const [isConnected, setIsConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<number | null>(null);
   const onMessageRef = useRef(onMessage);
+  const onRoomNotFoundRef = useRef(onRoomNotFound);
 
   useEffect(() => {
     onMessageRef.current = onMessage;
   }, [onMessage]);
+
+  useEffect(() => {
+    onRoomNotFoundRef.current = onRoomNotFound;
+  }, [onRoomNotFound]);
 
   const connect = useCallback(() => {
     if (!roomCode) return;
@@ -52,10 +58,19 @@ export function useWebSocket({ roomCode, onMessage, autoConnect = true }: UseWeb
       setError('Erro de conexão com a sala');
     };
 
-    ws.onclose = () => {
+    ws.onclose = (event: CloseEvent) => {
       setIsConnected(false);
       socketRef.current = null;
-      // Reconnect after 2 seconds if roomCode still exists
+
+      if (event.code === 4004) {
+        // Room no longer exists on server
+        if (onRoomNotFoundRef.current) {
+          onRoomNotFoundRef.current();
+        }
+        return;
+      }
+
+      // Reconnect after 2.5 seconds if roomCode still exists
       if (roomCode) {
         reconnectTimeoutRef.current = window.setTimeout(() => {
           connect();

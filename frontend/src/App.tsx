@@ -14,23 +14,83 @@ import { useAudio } from './hooks/useAudio';
 import { useSpeech } from './hooks/useSpeech';
 import type { BingoCard, GameState, Player, PublicRoom, WSMessage } from './types/bingo';
 
+const SESSION_STORAGE_KEY = 'bingo_active_session';
+
+interface SavedSession {
+  roomCode: string;
+  roomPin?: string;
+  playerId: string;
+  playerName: string;
+  playerToken: string;
+  isHost: boolean;
+  cards: BingoCard[];
+  currentView: 'game' | 'host';
+  savedAt: number;
+}
+
+const loadSavedSession = (): SavedSession | null => {
+  try {
+    const raw = localStorage.getItem(SESSION_STORAGE_KEY);
+    if (!raw) return null;
+    const session: SavedSession = JSON.parse(raw);
+    // Ignore sessions older than 12 hours
+    if (!session.roomCode || !session.playerId || (Date.now() - session.savedAt > 12 * 60 * 60 * 1000)) {
+      localStorage.removeItem(SESSION_STORAGE_KEY);
+      return null;
+    }
+    return session;
+  } catch {
+    return null;
+  }
+};
+
+const saveActiveSession = (session: SavedSession) => {
+  try {
+    localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
+  } catch {}
+};
+
+const clearActiveSession = () => {
+  try {
+    localStorage.removeItem(SESSION_STORAGE_KEY);
+  } catch {}
+};
+
 export function App() {
+  const initialSession = useRef(loadSavedSession()).current;
+
   // Navigation / View State
-  const [currentView, setCurrentView] = useState<'lobby' | 'game' | 'host'>('lobby');
+  const [currentView, setCurrentView] = useState<'lobby' | 'game' | 'host'>(
+    initialSession ? initialSession.currentView : 'lobby'
+  );
 
   // Session & Room State
-  const [roomCode, setRoomCode] = useState<string | null>(null);
-  const [roomPin, setRoomPin] = useState<string>('');
-  const [playerId, setPlayerId] = useState<string>('');
-  const [playerName, setPlayerName] = useState<string>('');
-  const [playerToken, setPlayerToken] = useState<string>('');
-  const [isHost, setIsHost] = useState<boolean>(false);
-  const [cards, setCards] = useState<BingoCard[]>([]);
+  const [roomCode, setRoomCode] = useState<string | null>(
+    initialSession ? initialSession.roomCode : null
+  );
+  const [roomPin, setRoomPin] = useState<string>(
+    initialSession ? (initialSession.roomPin || '') : ''
+  );
+  const [playerId, setPlayerId] = useState<string>(
+    initialSession ? initialSession.playerId : ''
+  );
+  const [playerName, setPlayerName] = useState<string>(
+    initialSession ? initialSession.playerName : ''
+  );
+  const [playerToken, setPlayerToken] = useState<string>(
+    initialSession ? initialSession.playerToken : ''
+  );
+  const [isHost, setIsHost] = useState<boolean>(
+    initialSession ? Boolean(initialSession.isHost) : false
+  );
+  const [cards, setCards] = useState<BingoCard[]>(
+    initialSession ? (initialSession.cards || []) : []
+  );
   const [players, setPlayers] = useState<Player[]>([]);
   const [users, setUsers] = useState<Player[]>([]);
   const [isUsersOpen, setIsUsersOpen] = useState<boolean>(false);
   const [gameState, setGameState] = useState<GameState>({
-    code: '',
+    code: initialSession ? initialSession.roomCode : '',
     status: 'lobby',
     stage: 'waiting',
     drawn_balls: [],
@@ -449,12 +509,96 @@ export function App() {
     [soundEnabled, voiceEnabled, playBallDrop, playVictory, playError, speakBall, speakText]
   );
 
+  const handleRoomNotFound = useCallback(() => {
+    clearActiveSession();
+    setRoomCode(null);
+    setRoomPin('');
+    setCards([]);
+    setCurrentView('lobby');
+    setStatusBanner('A sala anterior não está mais disponível.');
+  }, []);
+
   // WebSocket hook
   const { isConnected, sendMessage, disconnect } = useWebSocket({
     roomCode,
     onMessage: handleWSMessage,
+    onRoomNotFound: handleRoomNotFound,
     autoConnect: Boolean(roomCode),
   });
+
+  // Automatically persist active session whenever session parameters change
+  useEffect(() => {
+    if (roomCode && playerId && playerToken && currentView !== 'lobby') {
+      saveActiveSession({
+        roomCode,
+        roomPin,
+        playerId,
+        playerName,
+        playerToken,
+        isHost,
+        cards,
+        currentView,
+        savedAt: Date.now(),
+      });
+    }
+  }, [roomCode, roomPin, playerId, playerName, playerToken, isHost, cards, currentView]);
+
+  // Prevent accidental reload, tab close, or navigation when inside an active game
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (roomCode && currentView !== 'lobby') {
+        e.preventDefault();
+        e.returnValue = '';
+        return '';
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [roomCode, currentView]);
+
+  // On mount, verify and synchronize restored session with the backend
+  useEffect(() => {
+    if (!initialSession) return;
+
+    const verifySession = async () => {
+      try {
+        const res = await fetch(`/api/rooms/${initialSession.roomCode}/join`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            player_name: initialSession.playerName,
+            card_count: initialSession.cards?.length || 1,
+            token: initialSession.playerToken,
+          }),
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          if (data.cards && data.cards.length > 0) {
+            setCards(data.cards);
+          }
+          setIsHost(Boolean(data.is_host));
+          if (data.prizes) {
+            setGameState((prev) => ({ ...prev, prizes: data.prizes }));
+          }
+          setStatusBanner('Sessão restaurada! Você continua na partida.');
+        } else if (res.status === 404) {
+          clearActiveSession();
+          setRoomCode(null);
+          setCards([]);
+          setCurrentView('lobby');
+          setStatusBanner('A sala anterior não está mais disponível.');
+        }
+      } catch (err) {
+        console.warn('Network issue while verifying restored session:', err);
+      }
+    };
+
+    verifySession();
+  }, []);
 
   // Handshake after connection opens
   useEffect(() => {
@@ -660,13 +804,22 @@ export function App() {
   };
 
   const handleBackToLobby = () => {
+    if (roomCode && currentView !== 'lobby') {
+      const confirmed = window.confirm('Deseja realmente sair da sala e voltar ao Lobby?');
+      if (!confirmed) return;
+    }
+
+    clearActiveSession();
     disconnect();
     setRoomCode(null);
+    setRoomPin('');
+    setCards([]);
     setCurrentView('lobby');
     setGameState((prev) => ({
       ...prev,
       code: '',
       status: 'lobby',
+      stage: 'waiting',
       drawn_balls: [],
       last_drawn_ball: null,
       winners: [],

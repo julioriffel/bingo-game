@@ -1,5 +1,10 @@
 @import "tailwindcss";
 
+@theme {
+  --font-display: 'Righteous', cursive, system-ui, sans-serif;
+  --font-sans: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
 @layer base {
   html, body {
     overscroll-behavior-y: none;
@@ -7,8 +12,18 @@
   }
   body {
     @apply bg-slate-950 text-slate-100 min-h-screen antialiased select-none;
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    font-family: var(--font-sans);
   }
+
+  /* Accessible focus indicators for keyboard navigation */
+  :focus-visible {
+    @apply outline-none ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-950;
+  }
+}
+
+/* Custom font utility classes */
+.font-display {
+  font-family: var(--font-display);
 }
 
 /* Custom glow animations for Bingo */
@@ -17,7 +32,7 @@
     box-shadow: 0 0 15px rgba(234, 179, 8, 0.4), inset 0 0 10px rgba(234, 179, 8, 0.2);
   }
   50% {
-    box-shadow: 0 0 25px rgba(234, 179, 8, 0.8), inset 0 0 15px rgba(234, 179, 8, 0.5);
+    box-shadow: 0 0 28px rgba(234, 179, 8, 0.85), inset 0 0 18px rgba(234, 179, 8, 0.55);
   }
 }
 
@@ -47,7 +62,7 @@
   }
   50% {
     filter: brightness(1.25);
-    transform: scale(1.03);
+    transform: scale(1.02);
   }
   100% {
     filter: brightness(1);
@@ -57,4 +72,57 @@
 
 .animate-victory-pulse {
   animation: victory-shimmer 2s infinite ease-in-out;
+}
+
+@keyframes scale-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-scale-in {
+  animation: scale-in 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes slide-down {
+  0% {
+    opacity: 0;
+    transform: translateY(-12px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-slide-down {
+  animation: slide-down 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes spin-slow {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin-slow {
+  animation: spin-slow 12s linear infinite;
+}
+
+/* Pre-delivery WCAG reduced motion respect */
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

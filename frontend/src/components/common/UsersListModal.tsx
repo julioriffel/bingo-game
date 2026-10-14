@@ -41,6 +41,16 @@ export const UsersListModal: React.FC<UsersListModalProps> = ({
     return () => clearInterval(interval);
   }, [isOpen]);
 
+  // Handle ESC key to dismiss modal
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   // Find manager user from list or fallback
@@ -71,29 +81,37 @@ export const UsersListModal: React.FC<UsersListModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="users-list-title"
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/85 backdrop-blur-md animate-fade-in"
+    >
       <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-lg flex flex-col shadow-2xl overflow-hidden animate-scale-in max-h-[90vh]">
         {/* Header */}
         <div className="p-4 sm:p-5 border-b border-slate-800 flex items-center justify-between gap-3 bg-slate-900/95 sticky top-0 z-10">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-2xl bg-indigo-500/10 border border-indigo-500/30 text-indigo-400">
+            <div className="p-2.5 rounded-2xl bg-indigo-500/15 border border-indigo-500/30 text-indigo-400 shrink-0">
               <Users className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-black text-lg sm:text-xl text-slate-100 flex items-center gap-2">
+              <h3 id="users-list-title" className="font-display font-black text-lg sm:text-xl text-slate-100 flex items-center gap-2">
                 Usuários Conectados
-                <span className="text-xs font-mono font-bold bg-slate-800 text-amber-400 px-2 py-0.5 rounded-lg border border-slate-700">
+                <span className="text-xs font-mono font-bold bg-slate-800 text-amber-300 px-2 py-0.5 rounded-lg border border-slate-700">
                   {roomCode}
                 </span>
               </h3>
-              <p className="text-xs text-slate-400 font-medium">
+              <p className="text-xs text-slate-300 font-medium">
                 {bingoPlayers.length} jogador{bingoPlayers.length === 1 ? '' : 'es'} + 1 Manager
               </p>
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="p-2 rounded-xl text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition-colors cursor-pointer"
+            className="min-h-[44px] min-w-[44px] p-2 rounded-xl text-slate-400 hover:text-slate-100 hover:bg-slate-800 active:scale-95 transition-all flex items-center justify-center cursor-pointer"
+            aria-label="Fechar lista de usuários"
           >
             <X className="w-5 h-5" />
           </button>
@@ -104,40 +122,40 @@ export const UsersListModal: React.FC<UsersListModalProps> = ({
           {/* SECTION 1: MANAGER / MESA */}
           <div className="space-y-2.5">
             <div className="flex items-center justify-between">
-              <label className="text-xs font-bold uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
+              <label className="text-xs font-bold uppercase tracking-wider text-amber-400 flex items-center gap-1.5 font-display">
                 <Crown className="w-4 h-4 text-amber-400" /> Gerência da Mesa (Manager)
               </label>
-              <span className="text-[11px] text-slate-500 italic">Coordena o sorteio</span>
+              <span className="text-[11px] text-slate-400 italic">Coordena o sorteio</span>
             </div>
 
-            <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-500/10 via-slate-950 to-slate-900 border border-amber-500/30 space-y-3">
+            <div className="p-4.5 rounded-3xl bg-gradient-to-br from-amber-500/10 via-slate-950 to-slate-900 border border-amber-500/40 space-y-3.5 shadow-md">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-400 flex items-center justify-center shrink-0">
-                    <Crown className="w-5 h-5" />
+                  <div className="w-11 h-11 rounded-2xl bg-amber-500/20 border border-amber-500/40 text-amber-300 flex items-center justify-center shrink-0 shadow-inner">
+                    <Crown className="w-6 h-6" />
                   </div>
                   <div className="min-w-0">
                     <div className="font-bold text-slate-100 text-sm sm:text-base truncate flex items-center gap-1.5">
                       <span>{managerUser?.name || hostName}</span>
                       {managerUser?.id === currentUserId && (
-                        <span className="text-[10px] bg-amber-500/20 text-amber-300 font-bold px-1.5 py-0.5 rounded border border-amber-500/30">
+                        <span className="text-[10px] bg-amber-500/20 text-amber-300 font-bold px-2 py-0.5 rounded-full border border-amber-500/30">
                           (Você)
                         </span>
                       )}
                     </div>
                     <div className="flex items-center gap-2 text-xs mt-0.5">
                       {managerUser?.connected !== false ? (
-                        <span className="inline-flex items-center gap-1 text-emerald-400 font-medium">
-                          <Wifi className="w-3 h-3" /> Online
+                        <span className="inline-flex items-center gap-1 text-emerald-300 font-medium">
+                          <Wifi className="w-3.5 h-3.5 text-emerald-400" /> Online
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 text-rose-400 font-medium">
-                          <WifiOff className="w-3 h-3" /> Desconectado
+                        <span className="inline-flex items-center gap-1 text-rose-300 font-medium">
+                          <WifiOff className="w-3.5 h-3.5 text-rose-400" /> Desconectado
                         </span>
                       )}
                       <span className="text-slate-600">•</span>
-                      <span className="text-slate-400 flex items-center gap-1">
-                        <Clock className="w-3 h-3" />
+                      <span className="text-slate-300 flex items-center gap-1">
+                        <Clock className="w-3 h-3 text-slate-400" />
                         {elapsedSeconds < 20 ? 'Ativo agora' : `Inativo há ${formatTime(elapsedSeconds)}`}
                       </span>
                     </div>
@@ -146,11 +164,11 @@ export const UsersListModal: React.FC<UsersListModalProps> = ({
 
                 <div className="shrink-0 text-right">
                   {isInactive ? (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-rose-500/20 text-rose-300 text-xs font-bold border border-rose-500/40 animate-pulse">
-                      <ShieldAlert className="w-3.5 h-3.5" /> Inativo
+                    <span className="inline-flex items-center gap-1 px-3 py-1 rounded-xl bg-rose-500/20 text-rose-200 text-xs font-bold border border-rose-500/50 animate-pulse">
+                      <ShieldAlert className="w-3.5 h-3.5 text-rose-400" /> Inativo
                     </span>
                   ) : (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-emerald-500/20 text-emerald-300 text-xs font-bold border border-emerald-500/40">
+                    <span className="inline-flex items-center gap-1 px-3 py-1 rounded-xl bg-emerald-500/20 text-emerald-300 text-xs font-bold border border-emerald-500/40">
                       Ativo
                     </span>
                   )}
@@ -159,13 +177,13 @@ export const UsersListModal: React.FC<UsersListModalProps> = ({
 
               {/* Inactivity warning & Takeover action */}
               {!isCurrentUserHost && (
-                <div className="pt-2 border-t border-slate-800">
+                <div className="pt-2.5 border-t border-slate-800">
                   {isInactive ? (
-                    <div className="space-y-2">
-                      <div className="p-2.5 rounded-xl bg-rose-950/40 border border-rose-500/40 text-rose-200 text-xs flex items-start gap-2">
+                    <div className="space-y-2.5">
+                      <div className="p-3 rounded-2xl bg-rose-950/60 border border-rose-500/50 text-rose-100 text-xs flex items-start gap-2.5">
                         <ShieldAlert className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
                         <div className="leading-snug">
-                          <strong>Manager inativo por mais de 2 minutos!</strong>
+                          <strong className="text-rose-200">Manager inativo por mais de 2 minutos!</strong>
                           <p className="text-[11px] text-rose-300/80 mt-0.5">
                             Você pode assumir o gerenciamento agora para dar continuidade à partida.
                           </p>
@@ -176,19 +194,19 @@ export const UsersListModal: React.FC<UsersListModalProps> = ({
                         type="button"
                         onClick={handleClaim}
                         disabled={isClaiming}
-                        className="w-full py-2.5 px-4 rounded-xl font-bold text-xs bg-gradient-to-r from-amber-500 to-amber-400 text-slate-950 hover:from-amber-400 hover:to-amber-300 transition-all flex items-center justify-center gap-2 shadow-lg shadow-amber-500/20 cursor-pointer disabled:opacity-50"
+                        className="min-h-[48px] w-full py-2.5 px-4 rounded-2xl font-display font-black text-xs sm:text-sm tracking-wide bg-gradient-to-r from-amber-500 to-amber-400 text-slate-950 hover:from-amber-400 hover:to-amber-300 transition-all flex items-center justify-center gap-2 shadow-lg shadow-amber-500/25 cursor-pointer disabled:opacity-50 active:scale-95 border border-amber-300"
                       >
                         <Zap className="w-4 h-4 fill-slate-950" />
                         {isClaiming ? 'Assumindo gerenciamento...' : '⚡ Assumir Gerenciamento da Sala'}
                       </button>
                     </div>
                   ) : (
-                    <div className="flex items-center justify-between text-xs text-slate-400 bg-slate-950/60 p-2.5 rounded-xl border border-slate-800">
-                      <span className="flex items-center gap-1.5 text-slate-400">
-                        <Clock className="w-3.5 h-3.5 text-slate-500" />
+                    <div className="flex items-center justify-between text-xs text-slate-300 bg-slate-950/70 p-3 rounded-2xl border border-slate-800">
+                      <span className="flex items-center gap-1.5 text-slate-300">
+                        <Clock className="w-3.5 h-3.5 text-slate-400" />
                         Assumir gerenciamento disponível em:
                       </span>
-                      <span className="font-mono font-bold text-amber-400">
+                      <span className="font-mono font-bold text-amber-300">
                         {formatTime(remainingSeconds)}
                       </span>
                     </div>
@@ -201,41 +219,41 @@ export const UsersListModal: React.FC<UsersListModalProps> = ({
           {/* SECTION 2: BINGO PLAYERS */}
           <div className="space-y-2.5">
             <div className="flex items-center justify-between">
-              <label className="text-xs font-bold uppercase tracking-wider text-indigo-400 flex items-center gap-1.5">
+              <label className="text-xs font-bold uppercase tracking-wider text-indigo-400 flex items-center gap-1.5 font-display">
                 <User className="w-4 h-4 text-indigo-400" /> Jogadores de Bingo ({bingoPlayers.length})
               </label>
-              <span className="text-[11px] text-slate-500 italic">Disputam as cartelas</span>
+              <span className="text-[11px] text-slate-400 italic">Disputam as cartelas</span>
             </div>
 
             {bingoPlayers.length === 0 ? (
-              <div className="p-6 rounded-2xl bg-slate-950 border border-slate-800 text-center space-y-1">
-                <Users className="w-8 h-8 text-slate-600 mx-auto mb-1" />
-                <p className="text-xs text-slate-400 font-bold">Nenhum jogador conectado ainda</p>
-                <p className="text-[11px] text-slate-500">
+              <div className="p-8 rounded-3xl bg-slate-950/70 border border-slate-800 text-center space-y-1.5">
+                <Users className="w-8 h-8 text-slate-500 mx-auto mb-1" />
+                <p className="text-xs text-slate-200 font-bold">Nenhum jogador conectado ainda</p>
+                <p className="text-[11px] text-slate-400">
                   Compartilhe o código da sala <strong>{roomCode}</strong> para que os participantes ingressem.
                 </p>
               </div>
             ) : (
-              <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+              <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
                 {bingoPlayers.map((player) => (
                   <div
                     key={player.id}
-                    className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between gap-3 hover:border-slate-700 transition-colors"
+                    className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800 flex items-center justify-between gap-3 hover:border-slate-700 transition-colors"
                   >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="w-8 h-8 rounded-lg bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 flex items-center justify-center font-bold text-xs shrink-0">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-9 h-9 rounded-xl bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 flex items-center justify-center font-bold text-xs shrink-0 shadow-xs">
                         {player.name.substring(0, 2).toUpperCase()}
                       </div>
                       <div className="min-w-0">
-                        <div className="font-bold text-slate-200 text-xs sm:text-sm truncate flex items-center gap-1.5">
+                        <div className="font-bold text-slate-100 text-xs sm:text-sm truncate flex items-center gap-1.5">
                           <span>{player.name}</span>
                           {player.id === currentUserId && (
-                            <span className="text-[10px] bg-indigo-500/20 text-indigo-300 font-bold px-1.5 py-0.2 rounded border border-indigo-500/30">
+                            <span className="text-[10px] bg-indigo-500/20 text-indigo-300 font-bold px-2 py-0.5 rounded-full border border-indigo-500/30">
                               (Você)
                             </span>
                           )}
                         </div>
-                        <div className="text-[10px] text-slate-400 flex items-center gap-2 mt-0.5">
+                        <div className="text-[11px] text-slate-400 flex items-center gap-2 mt-0.5">
                           <span>{player.card_count || 1} {(player.card_count || 1) === 1 ? 'cartela' : 'cartelas'}</span>
                         </div>
                       </div>
@@ -243,11 +261,11 @@ export const UsersListModal: React.FC<UsersListModalProps> = ({
 
                     <div className="shrink-0">
                       {player.connected ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-500/10 text-emerald-400 text-[10px] font-bold border border-emerald-500/20">
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-500/15 text-emerald-300 text-xs font-bold border border-emerald-500/30">
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> Online
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-800 text-slate-400 text-[10px] font-bold">
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-800 text-slate-400 text-xs font-bold">
                           Ausente
                         </span>
                       )}
@@ -260,9 +278,9 @@ export const UsersListModal: React.FC<UsersListModalProps> = ({
         </div>
 
         {/* Footer info */}
-        <div className="p-3.5 sm:px-6 bg-slate-950 border-t border-slate-800 text-[11px] text-slate-400 flex items-center gap-2">
+        <div className="p-3.5 sm:px-6 bg-slate-950 border-t border-slate-800 text-xs text-slate-400 flex items-center gap-2.5">
           <Clock className="w-4 h-4 text-amber-400 shrink-0" />
-          <span>
+          <span className="leading-relaxed">
             Caso o Manager permaneça inativo por mais de 2 minutos, a opção de assumir a gestão é liberada automaticamente para qualquer participante.
           </span>
         </div>

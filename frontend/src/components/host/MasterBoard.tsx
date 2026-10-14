@@ -17,22 +17,27 @@ export const MasterBoard: React.FC<MasterBoardProps> = ({ drawnBalls, lastBall }
   const drawnSet = new Set(drawnBalls);
 
   return (
-    <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-4 sm:p-6 shadow-2xl space-y-3">
+    <section
+      role="region"
+      aria-label="Mesa geral de pedras de 1 a 75"
+      className="bg-slate-900/95 border border-slate-800 rounded-3xl p-4 sm:p-6 shadow-2xl space-y-4"
+    >
       <div className="flex items-center justify-between px-1">
-        <h3 className="text-xs sm:text-sm font-black text-slate-400 uppercase tracking-wider">
+        <h3 className="text-xs sm:text-sm font-black text-slate-300 uppercase tracking-wider font-display">
           Mesa Geral de Pedras (Master Board)
         </h3>
-        <span className="text-xs font-mono font-bold text-amber-400 bg-amber-500/10 px-2.5 py-1 rounded-lg border border-amber-500/30">
+        <span className="text-xs font-mono font-bold text-amber-300 bg-amber-500/15 px-3 py-1 rounded-xl border border-amber-500/30 shadow-xs">
           {drawnBalls.length} / 75 Sorteadas
         </span>
       </div>
 
-      <div className="space-y-2">
+      <div className="space-y-2.5" role="table" aria-label="Tabela das 75 pedras do bingo">
         {ROWS.map((row) => (
-          <div key={row.letter} className="flex items-center gap-2">
+          <div key={row.letter} className="flex items-center gap-2 sm:gap-2.5" role="row">
             {/* Letter Badge */}
             <div
-              className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl border flex items-center justify-center font-black text-base sm:text-lg shrink-0 ${row.color}`}
+              role="rowheader"
+              className={`w-9 h-9 sm:w-11 sm:h-11 rounded-2xl border flex items-center justify-center font-display font-black text-lg sm:text-xl shrink-0 shadow-sm ${row.color}`}
             >
               {row.letter}
             </div>
@@ -46,12 +51,14 @@ export const MasterBoard: React.FC<MasterBoardProps> = ({ drawnBalls, lastBall }
                 return (
                   <div
                     key={num}
-                    className={`aspect-square rounded-lg flex items-center justify-center font-mono font-bold text-[10px] sm:text-xs transition-all ${
+                    role="cell"
+                    aria-label={`Pedra ${row.letter} ${num}${isLatest ? ', última sorteada' : isDrawn ? ', já sorteada' : ', não sorteada'}`}
+                    className={`aspect-square rounded-xl flex items-center justify-center font-mono font-bold text-xs sm:text-sm transition-all select-none ${
                       isLatest
-                        ? 'bg-amber-400 text-slate-950 font-black ring-2 ring-amber-300 scale-110 z-10 shadow-lg shadow-amber-400/50'
+                        ? 'bg-gradient-to-tr from-amber-400 to-yellow-200 text-slate-950 font-black ring-4 ring-amber-300 scale-110 z-10 shadow-lg shadow-amber-400/50 animate-pulse border border-amber-100'
                         : isDrawn
-                        ? 'bg-slate-700 text-amber-300 border border-amber-500/40'
-                        : 'bg-slate-950/70 text-slate-600 border border-slate-800/80'
+                        ? 'bg-amber-500/20 text-amber-300 border border-amber-500/50 font-black shadow-xs'
+                        : 'bg-slate-950/80 text-slate-500 border border-slate-800/90'
                     }`}
                   >
                     {num}
@@ -62,6 +69,6 @@ export const MasterBoard: React.FC<MasterBoardProps> = ({ drawnBalls, lastBall }
           </div>
         ))}
       </div>
-    </div>
+    </section>
   );
 };

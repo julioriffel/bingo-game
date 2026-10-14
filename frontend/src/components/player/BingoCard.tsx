@@ -38,41 +38,55 @@ export const BingoCard: React.FC<BingoCardProps> = ({
   const hasWinningPattern = patterns.length > 0;
 
   return (
-    <div
-      className={`bg-slate-900 border rounded-2xl p-2.5 sm:p-4 shadow-xl max-w-sm sm:max-w-md mx-auto w-full flex flex-col gap-2 transition-all ${
+    <section
+      aria-label={`Cartela de Bingo número ${cardIndex !== undefined ? cardIndex + 1 : 1}`}
+      className={`bg-slate-900/95 border rounded-3xl p-3 sm:p-5 shadow-2xl max-w-sm sm:max-w-md mx-auto w-full flex flex-col gap-2.5 transition-all duration-200 ${
         hasWinningPattern
-          ? 'border-amber-500/70 shadow-amber-500/20 ring-2 ring-amber-500/30'
-          : 'border-slate-800'
+          ? 'border-amber-500/80 shadow-amber-500/25 ring-2 ring-amber-500/40'
+          : 'border-slate-800 shadow-slate-950/50'
       }`}
     >
       {/* Header Info: Card index & Winning Banner */}
-      <div className="flex items-center justify-between px-1 text-xs text-slate-400 font-bold">
-        <span>CARTELA #{cardIndex !== undefined ? cardIndex + 1 : 1}</span>
-        <span className="font-mono text-[10px] text-slate-500">{card.id.split('_').pop()}</span>
+      <div className="flex items-center justify-between px-1 text-xs text-slate-300 font-bold">
+        <div className="flex items-center gap-1.5">
+          <span className="font-display tracking-wide text-amber-400">CARTELA</span>
+          <span className="bg-slate-800 text-slate-200 px-2 py-0.5 rounded-md font-mono text-xs">
+            #{cardIndex !== undefined ? cardIndex + 1 : 1}
+          </span>
+        </div>
+        <span className="font-mono text-[11px] text-slate-400 bg-slate-950/80 px-2 py-0.5 rounded border border-slate-800">
+          ID: {card.id.split('_').pop()}
+        </span>
       </div>
 
       {hasWinningPattern && (
-        <div className="bg-gradient-to-r from-amber-500/20 via-rose-500/20 to-amber-500/20 border border-amber-500/50 rounded-xl px-3 py-1.5 flex items-center justify-between text-xs animate-victory-pulse">
-          <div className="flex items-center gap-1.5 font-black text-amber-300">
-            <Trophy className="w-4 h-4 text-amber-400 fill-amber-400 shrink-0" />
-            <span>
+        <div
+          role="status"
+          aria-live="polite"
+          className="bg-gradient-to-r from-amber-500/20 via-rose-500/20 to-amber-500/20 border border-amber-500/60 rounded-2xl px-3.5 py-2 flex items-center justify-between text-xs animate-victory-pulse shadow-md"
+        >
+          <div className="flex items-center gap-2 font-black text-amber-300">
+            <Trophy className="w-4 h-4 text-amber-400 fill-amber-400 shrink-0 drop-shadow" />
+            <span className="font-display tracking-wide">
               {patterns.some((p) => p.pattern_type === 'blackout')
                 ? 'CARTELA CHEIA VENCEDORA!'
                 : 'LINHA VENCEDORA RISCADA!'}
             </span>
           </div>
-          <span className="text-[10px] font-black text-rose-300 bg-rose-950/80 px-2 py-0.5 rounded-full border border-rose-500/40">
+          <span className="text-[10px] font-black tracking-wider text-rose-200 bg-rose-950/90 px-2.5 py-0.5 rounded-full border border-rose-500/50 shadow-xs">
             BINGO CONFIRMADO
           </span>
         </div>
       )}
 
       {/* Column Headers B-I-N-G-O */}
-      <div className="grid grid-cols-5 gap-1.5 sm:gap-2 text-center">
+      <div className="grid grid-cols-5 gap-1.5 sm:gap-2 text-center" role="row">
         {COLUMN_COLORS.map((col) => (
           <div
             key={col.letter}
-            className={`py-1.5 sm:py-2 rounded-xl font-black text-sm sm:text-base tracking-wider ${col.text} ${col.bg} border ${col.border}`}
+            role="columnheader"
+            aria-label={`Coluna ${col.letter}`}
+            className={`py-1.5 sm:py-2 rounded-xl font-display font-black text-base sm:text-lg tracking-wider ${col.text} ${col.bg} border ${col.border} shadow-inner select-none`}
           >
             {col.letter}
           </div>
@@ -80,13 +94,14 @@ export const BingoCard: React.FC<BingoCardProps> = ({
       </div>
 
       {/* 5x5 Card Matrix with SVG Strikethrough Overlay */}
-      <div className="relative">
+      <div className="relative" role="grid" aria-label="Grade 5 por 5 de números da cartela">
         {/* SVG Strike Lines Overlay for Winning Patterns */}
         {hasWinningPattern && (
           <svg
             className="absolute inset-0 w-full h-full pointer-events-none z-30 overflow-visible"
             viewBox="0 0 100 100"
             preserveAspectRatio="none"
+            aria-hidden="true"
           >
             {patterns.map((p) => {
               if (p.pattern_type === 'row') {
@@ -94,7 +109,6 @@ export const BingoCard: React.FC<BingoCardProps> = ({
                 const y = (r + 0.5) * 20;
                 return (
                   <g key={`svg-${p.pattern_id}`}>
-                    {/* Shadow / Outer Strike */}
                     <line
                       x1="2"
                       y1={y}
@@ -105,7 +119,6 @@ export const BingoCard: React.FC<BingoCardProps> = ({
                       strokeLinecap="round"
                       className="animate-strike-line drop-shadow-[0_0_12px_rgba(244,63,94,0.95)]"
                     />
-                    {/* Golden Core Line */}
                     <line
                       x1="2"
                       y1={y}
@@ -211,7 +224,7 @@ export const BingoCard: React.FC<BingoCardProps> = ({
                       y="2"
                       width="96"
                       height="96"
-                      rx="6"
+                      rx="12"
                       fill="none"
                       stroke="#fbbf24"
                       strokeWidth="4"
@@ -258,38 +271,45 @@ export const BingoCard: React.FC<BingoCardProps> = ({
                 return (
                   <div
                     key={`free-${rIdx}-${cIdx}`}
-                    className={`aspect-square rounded-xl flex flex-col items-center justify-center font-black shadow-inner transition-all ${
+                    role="gridcell"
+                    aria-label="Espaço livre central, marcado automaticamente"
+                    className={`aspect-square rounded-2xl flex flex-col items-center justify-center font-black shadow-inner transition-all ${
                       isWinningCell
-                        ? 'bg-gradient-to-tr from-amber-500 to-amber-300 border-2 border-rose-500 text-slate-950 ring-2 ring-rose-500/50'
+                        ? 'bg-gradient-to-tr from-amber-400 via-amber-300 to-yellow-200 border-2 border-rose-500 text-slate-950 ring-2 ring-rose-500/50 shadow-md shadow-rose-500/20'
                         : 'bg-gradient-to-tr from-amber-500/30 to-amber-400/20 border-2 border-amber-500/50 text-amber-300'
                     }`}
                   >
                     <Star
-                      className={`w-5 h-5 animate-spin-slow ${
-                        isWinningCell ? 'fill-slate-950 text-slate-950' : 'fill-amber-400 text-amber-400'
+                      className={`w-5 h-5 sm:w-6 sm:h-6 animate-spin-slow ${
+                        isWinningCell ? 'fill-slate-950 text-slate-950' : 'fill-amber-400 text-amber-400 drop-shadow'
                       }`}
                     />
-                    <span className="text-[10px] font-black tracking-widest mt-0.5">FREE</span>
+                    <span className="font-display text-[10px] font-black tracking-widest mt-0.5">FREE</span>
                   </div>
                 );
               }
+
+              const cellLabel = `Número ${cell.number}${cell.marked ? ', marcado' : ''}${isDrawn ? ', já sorteado' : ', ainda não sorteado'}`;
 
               return (
                 <button
                   type="button"
                   key={`cell-${cell.number}-${rIdx}-${cIdx}`}
+                  role="gridcell"
+                  aria-pressed={cell.marked}
+                  aria-label={cellLabel}
                   onClick={() => onToggleCell(card.id, cell.number)}
-                  className={`aspect-square rounded-xl flex items-center justify-center font-black text-base sm:text-lg transition-all relative select-none cursor-pointer ${
+                  className={`aspect-square rounded-2xl flex items-center justify-center font-bold text-base sm:text-lg transition-all relative select-none cursor-pointer touch-manipulation focus-visible:ring-2 focus-visible:ring-amber-400 active:scale-95 ${
                     isWinningCell
-                      ? 'bg-gradient-to-tr from-amber-400 via-amber-300 to-yellow-200 text-slate-950 ring-2 sm:ring-4 ring-rose-500/90 shadow-xl shadow-rose-500/30 scale-[0.98]'
+                      ? 'bg-gradient-to-tr from-amber-400 via-amber-300 to-yellow-200 text-slate-950 font-black ring-2 sm:ring-4 ring-rose-500/90 shadow-xl shadow-rose-500/30 scale-[0.98]'
                       : cell.marked
-                      ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/30 scale-[0.98]'
+                      ? 'bg-gradient-to-tr from-amber-500 to-amber-400 text-slate-950 font-black shadow-md shadow-amber-500/30 border border-amber-300/60 scale-[0.98]'
                       : isAssisted
-                      ? 'bg-slate-800 text-amber-300 border-2 border-amber-400/90 animate-pulse'
-                      : 'bg-slate-800/80 hover:bg-slate-700/90 text-slate-100 border border-slate-700/60'
+                      ? 'bg-slate-800 text-amber-300 border-2 border-amber-400 ring-2 ring-amber-400/20 animate-pulse font-black'
+                      : 'bg-slate-800/90 hover:bg-slate-700/90 active:bg-slate-700 text-slate-100 border border-slate-700/70 hover:border-slate-600'
                   }`}
                 >
-                  <span className="relative z-10">{cell.number}</span>
+                  <span className="relative z-10 tracking-tight">{cell.number}</span>
 
                   {/* Individual cell strikethrough slash for winning cells */}
                   {isWinningCell && (
@@ -298,16 +318,27 @@ export const BingoCard: React.FC<BingoCardProps> = ({
                     </span>
                   )}
 
+                  {/* Stamp checkmark icon */}
                   {cell.marked && !isWinningCell && (
-                    <span className="absolute top-1 right-1">
-                      <Check className="w-3 h-3 stroke-[3]" />
+                    <span className="absolute top-1 right-1 bg-slate-950/80 rounded-full p-0.5" aria-hidden="true">
+                      <Check className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-amber-400 stroke-[3]" />
                     </span>
                   )}
 
+                  {/* Trophy icon on winning cells */}
                   {isWinningCell && (
-                    <span className="absolute top-1 right-1">
-                      <Trophy className="w-3 h-3 text-rose-600 fill-rose-600 stroke-[1]" />
+                    <span className="absolute top-1 right-1" aria-hidden="true">
+                      <Trophy className="w-3 h-3 text-rose-600 fill-rose-600 stroke-[1] drop-shadow" />
                     </span>
+                  )}
+
+                  {/* Subtle indicator dot for drawn balls if not marked */}
+                  {isDrawn && !cell.marked && (
+                    <span
+                      className="absolute bottom-1 w-1.5 h-1.5 rounded-full bg-amber-400 shadow-xs"
+                      title="Pedra sorteada no globo"
+                      aria-hidden="true"
+                    />
                   )}
                 </button>
               );
@@ -315,6 +346,6 @@ export const BingoCard: React.FC<BingoCardProps> = ({
           )}
         </div>
       </div>
-    </div>
+    </section>
   );
 };

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Trophy, Layers, Clock, Globe, Lock, Gift, Plus, Trash2, Timer } from 'lucide-react';
 
 interface PrizeItem {
@@ -43,6 +43,16 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
     { title: '1º Prêmio: Linha', description: 'Para quem completar a 1ª linha' },
     { title: '2º Prêmio: Cartela Completa', description: 'Grande prêmio da rodada (Blackout)' },
   ]);
+
+  // Handle ESC key to dismiss modal
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
@@ -109,98 +119,110 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in">
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl flex flex-col max-h-[92vh]">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="create-room-title"
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/85 backdrop-blur-md animate-fade-in"
+    >
+      <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl flex flex-col max-h-[92vh] animate-scale-in">
         {/* Header */}
-        <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center font-bold">
+        <div className="px-6 py-4.5 border-b border-slate-800 flex items-center justify-between bg-slate-900/95 sticky top-0 z-10">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center font-black">
               +
             </div>
-            <h2 className="text-lg font-bold text-slate-100">Criar Nova Partida</h2>
+            <h2 id="create-room-title" className="text-lg sm:text-xl font-display font-black text-slate-100">
+              Criar Nova Partida
+            </h2>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-slate-200 transition-colors"
+            className="min-h-[44px] min-w-[44px] p-2 rounded-xl hover:bg-slate-800 active:scale-95 text-slate-400 hover:text-slate-100 transition-colors flex items-center justify-center cursor-pointer"
+            aria-label="Fechar janela"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Form Body */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-5 overflow-y-auto">
+        <form onSubmit={handleSubmit} className="p-5 sm:p-6 space-y-5 overflow-y-auto">
           {/* Host Name & Room Name */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+              <label htmlFor="create-host-name" className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5">
                 Seu Nome / Apelido *
               </label>
               <input
+                id="create-host-name"
                 type="text"
                 required
                 value={hostName}
                 onChange={(e) => setHostName(e.target.value)}
                 placeholder="Ex: Julio Mestre"
-                className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-500 transition-colors"
+                className="min-h-[44px] w-full bg-slate-950 border border-slate-700 rounded-2xl px-3.5 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-400/20 transition-all"
               />
             </div>
             <div>
-              <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+              <label htmlFor="create-room-name" className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5">
                 Nome da Sala (Opcional)
               </label>
               <input
+                id="create-room-name"
                 type="text"
                 value={roomName}
                 onChange={(e) => setRoomName(e.target.value)}
                 placeholder="Ex: Bingo da Família"
-                className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-500 transition-colors"
+                className="min-h-[44px] w-full bg-slate-950 border border-slate-700 rounded-2xl px-3.5 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-400/20 transition-all"
               />
             </div>
           </div>
 
           {/* DYNAMIC PRIZES SECTION */}
-          <div className="p-4 rounded-xl bg-slate-950 border border-amber-500/30 space-y-3">
+          <div className="p-4 rounded-2xl bg-slate-950 border border-amber-500/30 space-y-3">
             <div className="flex items-center justify-between">
-              <label className="flex items-center gap-2 text-xs font-bold text-amber-400 uppercase tracking-wider">
+              <label className="flex items-center gap-2 text-xs font-bold text-amber-400 uppercase tracking-wider font-display">
                 <Gift className="w-4 h-4 text-amber-400" /> Prêmios da Rodada ({prizes.length})
               </label>
               <button
                 type="button"
                 onClick={handleAddPrize}
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs font-bold border border-amber-500/40 transition-colors cursor-pointer"
+                className="min-h-[36px] inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs font-bold border border-amber-500/40 transition-colors cursor-pointer active:scale-95"
               >
                 <Plus className="w-3.5 h-3.5" /> Adicionar Prêmio
               </button>
             </div>
 
             {/* Presets */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-[11px]">
-              <span className="text-slate-500 shrink-0">Modelos:</span>
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
+              <span className="text-slate-400 shrink-0 font-medium">Modelos:</span>
               <button
                 type="button"
                 onClick={() => applyPrizePreset('multistage')}
-                className="px-2 py-0.5 rounded bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 shrink-0"
+                className="min-h-[32px] px-2.5 py-1 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-700/80 shrink-0 active:scale-95"
               >
                 Linha + Cheia
               </button>
               <button
                 type="button"
                 onClick={() => applyPrizePreset('podium')}
-                className="px-2 py-0.5 rounded bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 shrink-0"
+                className="min-h-[32px] px-2.5 py-1 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-700/80 shrink-0 active:scale-95"
               >
                 1º, 2º e 3º Lugar
               </button>
               <button
                 type="button"
                 onClick={() => applyPrizePreset('single')}
-                className="px-2 py-0.5 rounded bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 shrink-0"
+                className="min-h-[32px] px-2.5 py-1 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-700/80 shrink-0 active:scale-95"
               >
                 Prêmio Único
               </button>
               <button
                 type="button"
                 onClick={() => applyPrizePreset('none')}
-                className="px-2 py-0.5 rounded bg-slate-900 hover:bg-slate-800 text-rose-400 border border-slate-800 shrink-0"
+                className="min-h-[32px] px-2.5 py-1 rounded-xl bg-slate-900 hover:bg-slate-800 text-rose-400 border border-slate-700/80 shrink-0 active:scale-95"
               >
                 Limpar
               </button>
@@ -208,29 +230,29 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
 
             {/* Prizes inputs list */}
             {prizes.length === 0 ? (
-              <p className="text-xs text-slate-500 italic py-1 text-center">
-                Nenhum prêmio configurado (jogo amistoso/recreativo).
+              <p className="text-xs text-slate-400 italic py-2 text-center">
+                Nenhum prêmio configurado (jogo recreativo sem premiação física).
               </p>
             ) : (
-              <div className="space-y-2.5 max-h-48 overflow-y-auto pr-1">
+              <div className="space-y-2.5 max-h-52 overflow-y-auto pr-1">
                 {prizes.map((p, idx) => (
                   <div
                     key={`prz-${idx}`}
-                    className="p-2.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-2"
+                    className="p-3 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-2"
                   >
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-1.5 shrink-0">
-                        <span className="text-[11px] font-black font-mono text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded">
+                        <span className="text-[11px] font-black font-mono text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-lg border border-amber-500/20">
                           #{idx + 1}
                         </span>
                         <span
-                          className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded border ${
+                          className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border ${
                             idx === prizes.length - 1
                               ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
                               : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
                           }`}
                         >
-                          {idx === prizes.length - 1 ? '🏆 Cartela Completa' : 'Linha'}
+                          {idx === prizes.length - 1 ? '🏆 Cartela Cheia' : 'Linha'}
                         </span>
                       </div>
                       <input
@@ -239,15 +261,17 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
                         value={p.title}
                         onChange={(e) => handlePrizeChange(idx, 'title', e.target.value)}
                         placeholder="Nome do prêmio (ex: Cesta de Chocolate)"
-                        className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-500"
+                        aria-label={`Nome do prêmio número ${idx + 1}`}
+                        className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-400"
                       />
                       <button
                         type="button"
                         onClick={() => handleRemovePrize(idx)}
-                        className="p-1 rounded-md text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
+                        className="min-h-[36px] min-w-[36px] p-2 rounded-xl text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors flex items-center justify-center cursor-pointer"
                         title="Remover prêmio"
+                        aria-label={`Remover prêmio ${idx + 1}`}
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
+                        <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
                     <input
@@ -255,7 +279,8 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
                       value={p.description}
                       onChange={(e) => handlePrizeChange(idx, 'description', e.target.value)}
                       placeholder="Descrição opcional (ex: Doado pela Família Silva)"
-                      className="w-full bg-slate-950/70 border border-slate-800 rounded-lg px-2.5 py-1 text-[11px] text-slate-300 placeholder-slate-600 focus:outline-none focus:border-amber-500"
+                      aria-label={`Descrição do prêmio número ${idx + 1}`}
+                      className="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-300 placeholder-slate-600 focus:outline-none focus:border-amber-400"
                     />
                   </div>
                 ))}
@@ -265,7 +290,7 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
 
           {/* Win Condition Selection */}
           <div>
-            <label className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
+            <label className="flex items-center gap-2 text-xs font-bold text-slate-300 uppercase tracking-wider mb-2 font-display">
               <Trophy className="w-4 h-4 text-amber-400" /> Critério de Vitória
             </label>
             <div className="grid grid-cols-3 gap-2">
@@ -278,14 +303,14 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
                   type="button"
                   key={opt.id}
                   onClick={() => setWinCondition(opt.id as any)}
-                  className={`p-2.5 rounded-xl border text-left flex flex-col justify-between transition-all ${
+                  className={`min-h-[56px] p-2.5 rounded-2xl border text-left flex flex-col justify-between transition-all cursor-pointer active:scale-95 ${
                     winCondition === opt.id
-                      ? 'border-amber-500 bg-amber-500/10 text-amber-300'
-                      : 'border-slate-800 bg-slate-950 hover:border-slate-700 text-slate-400'
+                      ? 'border-amber-500 bg-amber-500/15 text-amber-300 shadow-sm'
+                      : 'border-slate-800 bg-slate-950 hover:border-slate-700 text-slate-300'
                   }`}
                 >
                   <span className="font-bold text-xs">{opt.label}</span>
-                  <span className="text-[10px] opacity-75 mt-0.5 leading-tight">{opt.desc}</span>
+                  <span className="text-[10px] text-slate-400 mt-0.5 leading-tight">{opt.desc}</span>
                 </button>
               ))}
             </div>
@@ -293,7 +318,7 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
 
           {/* Cards per Player */}
           <div>
-            <label className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
+            <label className="flex items-center gap-2 text-xs font-bold text-slate-300 uppercase tracking-wider mb-2 font-display">
               <Layers className="w-4 h-4 text-indigo-400" /> Cartelas por Jogador
             </label>
             <div className="flex gap-2">
@@ -302,10 +327,10 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
                   type="button"
                   key={num}
                   onClick={() => setMaxCards(num)}
-                  className={`flex-1 py-2 rounded-xl border font-bold text-xs transition-all ${
+                  className={`min-h-[44px] flex-1 py-2 rounded-2xl border font-bold text-xs transition-all cursor-pointer active:scale-95 ${
                     maxCards === num
-                      ? 'border-indigo-500 bg-indigo-500/20 text-indigo-300'
-                      : 'border-slate-800 bg-slate-950 hover:border-slate-700 text-slate-400'
+                      ? 'border-indigo-500 bg-indigo-500/20 text-indigo-300 shadow-sm'
+                      : 'border-slate-800 bg-slate-950 hover:border-slate-700 text-slate-300'
                   }`}
                 >
                   {num} {num === 1 ? 'Cartela' : 'Cartelas'}
@@ -315,17 +340,17 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
           </div>
 
           {/* Sorteio & Ritmo */}
-          <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-3">
+          <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
             <div className="flex items-center justify-between">
-              <label className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-wider">
+              <label className="flex items-center gap-2 text-xs font-bold text-slate-300 uppercase tracking-wider font-display">
                 <Clock className="w-4 h-4 text-sky-400" /> Modo de Sorteio
               </label>
-              <div className="flex bg-slate-900 p-0.5 rounded-lg border border-slate-800 text-xs">
+              <div className="flex bg-slate-900 p-1 rounded-xl border border-slate-800 text-xs">
                 <button
                   type="button"
                   onClick={() => setDrawMode('auto')}
-                  className={`px-3 py-1 rounded-md font-bold transition-colors ${
-                    drawMode === 'auto' ? 'bg-sky-500 text-slate-950' : 'text-slate-400'
+                  className={`min-h-[36px] px-3.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                    drawMode === 'auto' ? 'bg-sky-500 text-slate-950 shadow-xs' : 'text-slate-400 hover:text-slate-200'
                   }`}
                 >
                   Automático
@@ -333,8 +358,8 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
                 <button
                   type="button"
                   onClick={() => setDrawMode('manual')}
-                  className={`px-3 py-1 rounded-md font-bold transition-colors ${
-                    drawMode === 'manual' ? 'bg-sky-500 text-slate-950' : 'text-slate-400'
+                  className={`min-h-[36px] px-3.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                    drawMode === 'manual' ? 'bg-sky-500 text-slate-950 shadow-xs' : 'text-slate-400 hover:text-slate-200'
                   }`}
                 >
                   Manual
@@ -344,9 +369,9 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
 
             {drawMode === 'auto' && (
               <div>
-                <div className="flex justify-between text-xs text-slate-400 mb-1">
-                  <span>Velocidade por pedra:</span>
-                  <span className="font-bold text-sky-400">{drawInterval}s</span>
+                <div className="flex justify-between text-xs text-slate-300 mb-1.5">
+                  <span>Intervalo entre pedras:</span>
+                  <span className="font-bold text-sky-400 font-mono">{drawInterval}s</span>
                 </div>
                 <div className="flex gap-2">
                   {[5, 15, 30].map((sec) => (
@@ -354,10 +379,10 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
                       type="button"
                       key={sec}
                       onClick={() => setDrawInterval(sec)}
-                      className={`flex-1 py-1 rounded-lg border text-xs font-bold transition-all ${
+                      className={`min-h-[40px] flex-1 py-1 rounded-xl border text-xs font-bold transition-all cursor-pointer active:scale-95 ${
                         drawInterval === sec
-                          ? 'border-sky-500 bg-sky-500/20 text-sky-300'
-                          : 'border-slate-800 bg-slate-900 text-slate-400'
+                          ? 'border-sky-500 bg-sky-500/20 text-sky-300 shadow-xs'
+                          : 'border-slate-800 bg-slate-900 text-slate-300 hover:border-slate-700'
                       }`}
                     >
                       {sec}s {sec === 5 ? '★' : ''}
@@ -369,14 +394,14 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
           </div>
 
           {/* Janela de Contestação / Desempate */}
-          <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+          <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2.5">
             <div className="flex items-center justify-between">
-              <label className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-wider">
+              <label className="flex items-center gap-2 text-xs font-bold text-slate-300 uppercase tracking-wider font-display">
                 <Timer className="w-4 h-4 text-amber-400" /> Janela de Contestação (Bingo Simultâneo)
               </label>
               <span className="text-xs font-mono font-bold text-amber-400">{contestWindow}s</span>
             </div>
-            <p className="text-[11px] text-slate-500 leading-tight">
+            <p className="text-[11px] text-slate-400 leading-tight">
               Tempo de espera após o 1º bingo para outros jogadores cantarem na mesma pedra e disputarem na pedra mais alta.
             </p>
             <div className="flex gap-2 pt-1">
@@ -385,10 +410,10 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
                   type="button"
                   key={sec}
                   onClick={() => setContestWindow(sec)}
-                  className={`flex-1 py-1.5 rounded-lg border text-xs font-bold transition-all ${
+                  className={`min-h-[40px] flex-1 py-1.5 rounded-xl border text-xs font-bold transition-all cursor-pointer active:scale-95 ${
                     contestWindow === sec
-                      ? 'border-amber-500 bg-amber-500/20 text-amber-300'
-                      : 'border-slate-800 bg-slate-900 text-slate-400 hover:border-slate-700'
+                      ? 'border-amber-500 bg-amber-500/20 text-amber-300 shadow-xs'
+                      : 'border-slate-800 bg-slate-900 text-slate-300 hover:border-slate-700'
                   }`}
                 >
                   {sec}s {sec === 10 ? '★' : ''}
@@ -398,19 +423,20 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
           </div>
 
           {/* Visibilidade da Sala */}
-          <div className="flex items-center justify-between pt-1">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+          <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-950 border border-slate-800">
+            <span className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
               {isPublic ? <Globe className="w-4 h-4 text-emerald-400" /> : <Lock className="w-4 h-4 text-amber-400" />}
               {isPublic ? 'Sala Pública (Listada no Radar)' : 'Sala Privada (Apenas com PIN)'}
             </span>
             <button
               type="button"
               onClick={() => setIsPublic(!isPublic)}
-              className={`w-12 h-6 flex items-center rounded-full p-1 cursor-pointer transition-colors ${
+              aria-label={isPublic ? "Tornar sala privada" : "Tornar sala pública"}
+              className={`w-14 h-8 flex items-center rounded-full p-1 cursor-pointer transition-colors ${
                 isPublic ? 'bg-emerald-600 justify-end' : 'bg-slate-700 justify-start'
               }`}
             >
-              <div className="bg-white w-4 h-4 rounded-full shadow-md" />
+              <div className="bg-white w-6 h-6 rounded-full shadow-md" />
             </button>
           </div>
 
@@ -419,7 +445,7 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
             <button
               type="submit"
               disabled={isLoading || !hostName.trim()}
-              className="w-full py-3.5 px-4 rounded-xl font-black text-sm bg-gradient-to-r from-amber-500 to-amber-400 text-slate-950 hover:from-amber-400 hover:to-amber-300 transition-all shadow-lg shadow-amber-500/20 disabled:opacity-50 cursor-pointer"
+              className="min-h-[50px] w-full py-3.5 px-4 rounded-2xl font-display font-black text-sm tracking-wide bg-gradient-to-r from-amber-500 via-amber-400 to-yellow-300 text-slate-950 hover:from-amber-400 hover:to-amber-300 active:scale-95 transition-all shadow-xl shadow-amber-500/25 disabled:opacity-50 cursor-pointer border border-amber-300"
             >
               {isLoading ? 'CRIANDO SALA...' : 'CRIAR E ABRIR MESA'}
             </button>

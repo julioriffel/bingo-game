@@ -32,46 +32,65 @@ export const HelpModal: React.FC<HelpModalProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'rules' | 'player' | 'manager'>(defaultTab);
 
+  // Handle ESC key to dismiss modal
+  React.useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/85 backdrop-blur-md animate-fade-in">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="help-modal-title"
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/85 backdrop-blur-md animate-fade-in"
+    >
       <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-3xl flex flex-col shadow-2xl overflow-hidden animate-scale-in max-h-[92vh]">
         {/* Header */}
         <div className="p-4 sm:p-5 border-b border-slate-800 flex items-center justify-between gap-3 bg-slate-900/95 sticky top-0 z-10">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-400">
+            <div className="p-2.5 rounded-2xl bg-amber-500/15 border border-amber-500/30 text-amber-400 shrink-0">
               <BookOpen className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="font-black text-lg sm:text-xl text-slate-100 flex items-center gap-2">
+              <h2 id="help-modal-title" className="font-display font-black text-lg sm:text-xl text-slate-100 flex items-center gap-2">
                 Central de Ajuda & Manuais
                 <span className="text-[10px] uppercase font-bold tracking-wider bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full border border-amber-500/30">
                   Bingo 75
                 </span>
               </h2>
-              <p className="text-xs text-slate-400 font-medium">
+              <p className="text-xs text-slate-300 font-medium">
                 Regras oficiais, manual do jogador e guia do operador (Manager)
               </p>
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="p-2 rounded-xl text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition-colors cursor-pointer"
-            title="Fechar Ajuda"
+            className="min-h-[44px] min-w-[44px] p-2 rounded-xl text-slate-400 hover:text-slate-100 hover:bg-slate-800 active:scale-95 transition-all flex items-center justify-center cursor-pointer"
+            aria-label="Fechar Central de Ajuda"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Tab Navigation */}
-        <div className="px-4 sm:px-6 pt-3 bg-slate-950/40 border-b border-slate-800 flex gap-2">
+        <div className="px-4 sm:px-6 pt-3 bg-slate-950/40 border-b border-slate-800 flex gap-2" role="tablist">
           <button
             type="button"
+            role="tab"
+            aria-selected={activeTab === 'rules'}
             onClick={() => setActiveTab('rules')}
-            className={`flex items-center gap-2 px-4 py-2.5 text-xs sm:text-sm font-bold border-b-2 transition-all cursor-pointer ${
+            className={`min-h-[44px] flex items-center gap-2 px-4 py-2.5 text-xs sm:text-sm font-bold border-b-2 transition-all cursor-pointer ${
               activeTab === 'rules'
-                ? 'border-amber-400 text-amber-300 bg-amber-500/5'
+                ? 'border-amber-400 text-amber-300 bg-amber-500/5 font-display'
                 : 'border-transparent text-slate-400 hover:text-slate-200'
             }`}
           >
@@ -81,10 +100,12 @@ export const HelpModal: React.FC<HelpModalProps> = ({
 
           <button
             type="button"
+            role="tab"
+            aria-selected={activeTab === 'player'}
             onClick={() => setActiveTab('player')}
-            className={`flex items-center gap-2 px-4 py-2.5 text-xs sm:text-sm font-bold border-b-2 transition-all cursor-pointer ${
+            className={`min-h-[44px] flex items-center gap-2 px-4 py-2.5 text-xs sm:text-sm font-bold border-b-2 transition-all cursor-pointer ${
               activeTab === 'player'
-                ? 'border-indigo-400 text-indigo-300 bg-indigo-500/5'
+                ? 'border-indigo-400 text-indigo-300 bg-indigo-500/5 font-display'
                 : 'border-transparent text-slate-400 hover:text-slate-200'
             }`}
           >
@@ -94,10 +115,12 @@ export const HelpModal: React.FC<HelpModalProps> = ({
 
           <button
             type="button"
+            role="tab"
+            aria-selected={activeTab === 'manager'}
             onClick={() => setActiveTab('manager')}
-            className={`flex items-center gap-2 px-4 py-2.5 text-xs sm:text-sm font-bold border-b-2 transition-all cursor-pointer ${
+            className={`min-h-[44px] flex items-center gap-2 px-4 py-2.5 text-xs sm:text-sm font-bold border-b-2 transition-all cursor-pointer ${
               activeTab === 'manager'
-                ? 'border-sky-400 text-sky-300 bg-sky-500/5'
+                ? 'border-sky-400 text-sky-300 bg-sky-500/5 font-display'
                 : 'border-transparent text-slate-400 hover:text-slate-200'
             }`}
           >
@@ -445,8 +468,9 @@ export const HelpModal: React.FC<HelpModalProps> = ({
             <span>Regulamento Oficial</span>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs transition-colors cursor-pointer"
+            className="min-h-[44px] px-5 py-2.5 rounded-2xl bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-200 font-bold text-xs transition-all cursor-pointer border border-slate-700/80"
           >
             Entendido, Fechar
           </button>

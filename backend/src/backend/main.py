@@ -16,11 +16,25 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+import asyncio
+from .services.room_service import room_service
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Iniciando Bingo Backend (Python 3.14 + FastAPI + WebSockets)...")
     await redis_service.connect()
+
+    async def _periodic_cleanup():
+        try:
+            while True:
+                await asyncio.sleep(3600)
+                room_service.cleanup_expired_rooms()
+        except asyncio.CancelledError:
+            pass
+
+    cleanup_task = asyncio.create_task(_periodic_cleanup())
     yield
+    cleanup_task.cancel()
     logger.info("Encerrando Bingo Backend...")
     await redis_service.close()
 

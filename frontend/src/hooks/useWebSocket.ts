@@ -13,6 +13,7 @@ export function useWebSocket({ roomCode, onMessage, onRoomNotFound, autoConnect 
   const [error, setError] = useState<string | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<number | null>(null);
+  const reconnectAttemptsRef = useRef<number>(0);
   const onMessageRef = useRef(onMessage);
   const onRoomNotFoundRef = useRef(onRoomNotFound);
 
@@ -27,7 +28,10 @@ export function useWebSocket({ roomCode, onMessage, onRoomNotFound, autoConnect 
   const connect = useCallback(() => {
     if (!roomCode) return;
 
-    if (socketRef.current && (socketRef.current.readyState === WebSocket.OPEN || socketRef.current.readyState === WebSocket.CONNECTING)) {
+    if (
+      socketRef.current &&
+      (socketRef.current.readyState === WebSocket.OPEN || socketRef.current.readyState === WebSocket.CONNECTING)
+    ) {
       return;
     }
 
@@ -40,6 +44,7 @@ export function useWebSocket({ roomCode, onMessage, onRoomNotFound, autoConnect 
     ws.onopen = () => {
       setIsConnected(true);
       setError(null);
+      reconnectAttemptsRef.current = 0; // Reset backoff counter on successful connection
     };
 
     ws.onmessage = (event) => {
@@ -49,12 +54,11 @@ export function useWebSocket({ roomCode, onMessage, onRoomNotFound, autoConnect 
           onMessageRef.current(data);
         }
       } catch (err) {
-        console.error('Failed to parse WebSocket message:', err);
+        // Drop malformed frame safely
       }
     };
 
-    ws.onerror = (evt) => {
-      console.warn('WebSocket error:', evt);
+    ws.onerror = () => {
       setError('Erro de conexão com a sala');
     };
 
@@ -70,11 +74,16 @@ export function useWebSocket({ roomCode, onMessage, onRoomNotFound, autoConnect 
         return;
       }
 
-      // Reconnect after 2.5 seconds if roomCode still exists
+      // Reconnect with exponential backoff and jitter (prevents thundering herd)
       if (roomCode) {
+        reconnectAttemptsRef.current += 1;
+        const baseDelay = 1000 * Math.pow(1.5, Math.min(reconnectAttemptsRef.current, 6));
+        const jitter = Math.random() * 500;
+        const delay = Math.min(baseDelay + jitter, 15000);
+
         reconnectTimeoutRef.current = window.setTimeout(() => {
           connect();
-        }, 2500);
+        }, delay);
       }
     };
   }, [roomCode]);
@@ -82,7 +91,9 @@ export function useWebSocket({ roomCode, onMessage, onRoomNotFound, autoConnect 
   const disconnect = useCallback(() => {
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
     }
+    reconnectAttemptsRef.current = 0;
     if (socketRef.current) {
       socketRef.current.close();
       socketRef.current = null;
@@ -90,12 +101,16 @@ export function useWebSocket({ roomCode, onMessage, onRoomNotFound, autoConnect 
     setIsConnected(false);
   }, []);
 
-  const sendMessage = useCallback((type: string, payload: any = {}) => {
+  const sendMessage = useCallback((type: string, payload: any = {}): boolean => {
     if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
-      socketRef.current.send(JSON.stringify({ type, payload, timestamp: Date.now() }));
-    } else {
-      console.warn('Cannot send message, WebSocket not open');
+      try {
+        socketRef.current.send(JSON.stringify({ type, payload, timestamp: Date.now() }));
+        return true;
+      } catch (err) {
+        return false;
+      }
     }
+    return false;
   }, []);
 
   useEffect(() => {

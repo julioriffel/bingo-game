@@ -20,6 +20,13 @@ class RoomService:
         self.rooms: Dict[str, Room] = {}
         self.draw_tasks: Dict[str, asyncio.Task] = {}
         self.contest_tasks: Dict[str, asyncio.Task] = {}
+        self.background_tasks: set[asyncio.Task] = set()
+
+    def _create_tracked_task(self, coro) -> asyncio.Task:
+        task = asyncio.create_task(coro)
+        self.background_tasks.add(task)
+        task.add_done_callback(self.background_tasks.discard)
+        return task
 
     def _generate_room_code(self) -> str:
         while True:
@@ -199,7 +206,7 @@ class RoomService:
     def _start_draw_loop(self, room_code: str):
         if room_code in self.draw_tasks and not self.draw_tasks[room_code].done():
             self.draw_tasks[room_code].cancel()
-        self.draw_tasks[room_code] = asyncio.create_task(self._draw_loop(room_code))
+        self.draw_tasks[room_code] = self._create_tracked_task(self._draw_loop(room_code))
 
     async def _draw_loop(self, room_code: str):
         try:
@@ -213,9 +220,17 @@ class RoomService:
                 if not room or room.status != RoomStatus.PLAYING:
                     break
 
-                result = await self.draw_next_ball(room_code)
-                if not result:
-                    break
+                try:
+                    result = await self.draw_next_ball(room_code)
+                    if not result:
+                        break
+                except Exception as err:
+                    logger.error(
+                        "Erro transitório ao sortear pedra na sala %s: %s",
+                        room_code,
+                        err,
+                        exc_info=True
+                    )
         except asyncio.CancelledError:
             pass
 
@@ -478,7 +493,7 @@ class RoomService:
                 }
             })
 
-            self.contest_tasks[room_code] = asyncio.create_task(
+            self.contest_tasks[room_code] = self._create_tracked_task(
                 self._handle_contest_window(room_code, contest.id, duration)
             )
             return True, result.win_type or "Bingo", candidate
@@ -556,7 +571,7 @@ class RoomService:
 
         if room_code in self.contest_tasks and not self.contest_tasks[room_code].done():
             self.contest_tasks[room_code].cancel()
-        self.contest_tasks[room_code] = asyncio.create_task(
+        self.contest_tasks[room_code] = self._create_tracked_task(
             self._handle_tiebreaker_timeout(room_code, contest.id, timeout_seconds)
         )
 
@@ -806,7 +821,7 @@ class RoomService:
                             "message": f"Parabéns! {winner_cand.player_name} bateu Linha ({winner_cand.pattern_name}){tb_mention}{prize_announcement} A partida continua para o último prêmio de Linha: 🎁 {last_prize.title}!",
                         }
                     })
-                    asyncio.create_task(self._resume_after_delay(room_code, 5.0))
+                    self._create_tracked_task(self._resume_after_delay(room_code, 5.0))
                 else:
                     # Exactly 1 unawarded prize remains: Strictly transition to Cartela Completa
                     room.stage = GameStage.BLACKOUT
@@ -834,7 +849,7 @@ class RoomService:
                             "message": f"Parabéns! {winner_cand.player_name} bateu Linha ({winner_cand.pattern_name}){tb_mention}{prize_announcement} A partida avança para a CARTELA COMPLETA disputando: 🏆 {last_prize.title}!",
                         }
                     })
-                    asyncio.create_task(self._resume_after_delay(room_code, 5.0))
+                    self._create_tracked_task(self._resume_after_delay(room_code, 5.0))
             else:
                 # Multiple preliminary prizes remain: Keep stage in LINE
                 next_prize = unawarded[0]
@@ -863,7 +878,7 @@ class RoomService:
                         "message": f"Parabéns! {winner_cand.player_name} bateu Linha ({winner_cand.pattern_name}){tb_mention}{prize_announcement} A partida continua para o próximo prêmio de Linha: 🎁 {next_prize.title}!",
                     }
                 })
-                asyncio.create_task(self._resume_after_delay(room_code, 5.0))
+                self._create_tracked_task(self._resume_after_delay(room_code, 5.0))
         else:
             # 0 prizes configured
             if room.win_condition == WinCondition.MULTI_STAGE and room.stage == GameStage.LINE:
@@ -892,7 +907,7 @@ class RoomService:
                         "message": f"Parabéns! {winner_cand.player_name} bateu Linha ({winner_cand.pattern_name}){tb_mention}! A partida continua para Cartela Cheia!",
                     }
                 })
-                asyncio.create_task(self._resume_after_delay(room_code, 5.0))
+                self._create_tracked_task(self._resume_after_delay(room_code, 5.0))
             else:
                 room.status = RoomStatus.FINISHED
                 room.stage = GameStage.COMPLETED
@@ -936,16 +951,21 @@ class RoomService:
             await self._start_tiebreaker(room_code, contest)
 
     async def _resume_after_delay(self, room_code: str, delay: float):
-        await asyncio.sleep(delay)
-        room = self.rooms.get(room_code)
-        if room and room.status == RoomStatus.PAUSED and room.stage != GameStage.COMPLETED and room.active_contest is None:
-            room.status = RoomStatus.PLAYING
-            await connection_manager.broadcast_to_room(room_code, {
-                "type": "game_resumed",
-                "payload": {"is_paused": False, "stage": room.stage.value}
-            })
-            if room.draw_mode == DrawMode.AUTO:
-                self._start_draw_loop(room_code)
+        try:
+            await asyncio.sleep(delay)
+            room = self.rooms.get(room_code)
+            if room and room.status == RoomStatus.PAUSED and room.stage != GameStage.COMPLETED and room.active_contest is None:
+                room.status = RoomStatus.PLAYING
+                await connection_manager.broadcast_to_room(room_code, {
+                    "type": "game_resumed",
+                    "payload": {"is_paused": False, "stage": room.stage.value}
+                })
+                if room.draw_mode == DrawMode.AUTO:
+                    self._start_draw_loop(room_code)
+        except asyncio.CancelledError:
+            pass
+        except Exception as err:
+            logger.error("Erro ao retomar partida na sala %s após delay: %s", room_code, err, exc_info=True)
 
     def touch_manager_activity(self, room_code: str, player_id: str) -> bool:
         room = self.rooms.get(room_code)
@@ -1047,5 +1067,25 @@ class RoomService:
                     "prizes": [p.model_dump() for p in r.prizes],
                 })
         return public_list
+
+    def cleanup_expired_rooms(self, max_idle_seconds: float = 86400) -> int:
+        """Evicts finished or inactive rooms older than max_idle_seconds to prevent memory leaks."""
+        now = time.time()
+        expired_codes = []
+        for code, r in list(self.rooms.items()):
+            idle_time = now - max(r.manager_last_active_at, r.created_at)
+            if (r.status == RoomStatus.FINISHED or r.get_player_count() == 0) and idle_time > max_idle_seconds:
+                expired_codes.append(code)
+
+        for code in expired_codes:
+            if code in self.draw_tasks and not self.draw_tasks[code].done():
+                self.draw_tasks[code].cancel()
+            if code in self.contest_tasks and not self.contest_tasks[code].done():
+                self.contest_tasks[code].cancel()
+            self.rooms.pop(code, None)
+
+        if expired_codes:
+            logger.info("Limpeza de salas expiradas concluída: %d salas removidas", len(expired_codes))
+        return len(expired_codes)
 
 room_service = RoomService()

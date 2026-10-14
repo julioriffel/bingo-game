@@ -14,7 +14,9 @@ class Settings(BaseSettings):
         "http://127.0.0.1:5173",
         "http://127.0.0.1:3000",
         "http://127.0.0.1:3002",
-        "*",
+        "https://bingo.bolsadedados.com.br",
+        "http://bingo.bolsadedados.com.br",
+        "https://bolsadedados.com.br",
     ]
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")

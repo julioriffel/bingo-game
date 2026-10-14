@@ -12,22 +12,31 @@ export function useAudio(soundEnabled: boolean = true) {
     isEnabledRef.current = enabled;
   }, []);
 
-  const getAudioContext = useCallback(() => {
-    if (!audioCtxRef.current) {
-      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-      audioCtxRef.current = new AudioCtx();
+  const getAudioContext = useCallback((): AudioContext | null => {
+    try {
+      if (!audioCtxRef.current) {
+        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+        if (!AudioCtx) return null;
+        audioCtxRef.current = new AudioCtx();
+      }
+      if (audioCtxRef.current.state === 'suspended') {
+        audioCtxRef.current.resume().catch(() => {
+          // User interaction required before audio context can be resumed
+        });
+      }
+      return audioCtxRef.current;
+    } catch (err) {
+      // AudioContext creation not permitted by security policy or unsupported
+      return null;
     }
-    if (audioCtxRef.current.state === 'suspended') {
-      audioCtxRef.current.resume();
-    }
-    return audioCtxRef.current;
   }, []);
 
   // 1. Stamp / Click Sound
   const playStamp = useCallback(() => {
     if (!isEnabledRef.current) return;
+    const ctx = getAudioContext();
+    if (!ctx) return;
     try {
-      const ctx = getAudioContext();
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
 
@@ -46,18 +55,23 @@ export function useAudio(soundEnabled: boolean = true) {
 
       // Haptic feedback if supported and sound is enabled
       if ('vibrate' in navigator) {
-        navigator.vibrate(15);
+        try {
+          navigator.vibrate(15);
+        } catch (vErr) {
+          // Haptic vibrate failed or not allowed
+        }
       }
-    } catch {
-      // AudioContext policy fallback
+    } catch (err) {
+      // Audio node scheduling interrupted
     }
   }, [getAudioContext]);
 
   // 2. Ball Drop Sound
   const playBallDrop = useCallback(() => {
     if (!isEnabledRef.current) return;
+    const ctx = getAudioContext();
+    if (!ctx) return;
     try {
-      const ctx = getAudioContext();
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
 
@@ -73,14 +87,17 @@ export function useAudio(soundEnabled: boolean = true) {
 
       osc.start();
       osc.stop(ctx.currentTime + 0.15);
-    } catch {}
+    } catch (err) {
+      // Ball drop playback failed gracefully
+    }
   }, [getAudioContext]);
 
   // 3. Victory Fanfare
   const playVictory = useCallback(() => {
     if (!isEnabledRef.current) return;
+    const ctx = getAudioContext();
+    if (!ctx) return;
     try {
-      const ctx = getAudioContext();
       const notes = [523.25, 659.25, 783.99, 1046.5]; // C5, E5, G5, C6
       notes.forEach((freq, idx) => {
         const osc = ctx.createOscillator();
@@ -100,16 +117,23 @@ export function useAudio(soundEnabled: boolean = true) {
       });
 
       if ('vibrate' in navigator) {
-        navigator.vibrate([100, 50, 100, 50, 200]);
+        try {
+          navigator.vibrate([100, 50, 100, 50, 200]);
+        } catch (vErr) {
+          // Haptic vibration blocked
+        }
       }
-    } catch {}
+    } catch (err) {
+      // Fanfare audio synthesis failed gracefully
+    }
   }, [getAudioContext]);
 
   // 4. Subtle Thud Error
   const playError = useCallback(() => {
     if (!isEnabledRef.current) return;
+    const ctx = getAudioContext();
+    if (!ctx) return;
     try {
-      const ctx = getAudioContext();
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
 
@@ -125,7 +149,9 @@ export function useAudio(soundEnabled: boolean = true) {
 
       osc.start();
       osc.stop(ctx.currentTime + 0.15);
-    } catch {}
+    } catch (err) {
+      // Error thud audio synthesis failed gracefully
+    }
   }, [getAudioContext]);
 
   return { playStamp, playBallDrop, playVictory, playError, setSoundEnabled };

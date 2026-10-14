@@ -61,7 +61,9 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
         spread: 60,
         origin: { y: 0.85 },
       });
-    } catch {}
+    } catch (err) {
+      // Confetti canvas animation unavailable on this viewport; proceed with Bingo call
+    }
     onCallBingo(activeCard.id);
   };
 

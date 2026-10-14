@@ -18,7 +18,13 @@ export const JoinRoomModal: React.FC<JoinRoomModalProps> = ({
   onJoin,
   isLoading = false,
 }) => {
-  const [playerName, setPlayerName] = useState(localStorage.getItem('bingo_player_name') || '');
+  const [playerName, setPlayerName] = useState(() => {
+    try {
+      return localStorage.getItem('bingo_player_name') || '';
+    } catch (err) {
+      return '';
+    }
+  });
   const [cardCount, setCardCount] = useState<number>(1);
   const [pin, setPin] = useState('');
 
@@ -37,7 +43,11 @@ export const JoinRoomModal: React.FC<JoinRoomModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!playerName.trim()) return;
-    localStorage.setItem('bingo_player_name', playerName.trim());
+    try {
+      localStorage.setItem('bingo_player_name', playerName.trim());
+    } catch (err) {
+      // Storage unavailable in private browsing
+    }
     await onJoin({
       playerName: playerName.trim(),
       cardCount,

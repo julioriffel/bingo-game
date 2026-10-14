@@ -35,11 +35,16 @@ const loadSavedSession = (): SavedSession | null => {
     const session: SavedSession = JSON.parse(raw);
     // Ignore sessions older than 12 hours
     if (!session.roomCode || !session.playerId || (Date.now() - session.savedAt > 12 * 60 * 60 * 1000)) {
-      localStorage.removeItem(SESSION_STORAGE_KEY);
+      try {
+        localStorage.removeItem(SESSION_STORAGE_KEY);
+      } catch (err) {
+        // Storage removal error ignored
+      }
       return null;
     }
     return session;
-  } catch {
+  } catch (err) {
+    // Malformed storage payload or security policy restriction
     return null;
   }
 };
@@ -47,13 +52,17 @@ const loadSavedSession = (): SavedSession | null => {
 const saveActiveSession = (session: SavedSession) => {
   try {
     localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
-  } catch {}
+  } catch (err) {
+    // Storage quota exceeded or disabled in private browsing
+  }
 };
 
 const clearActiveSession = () => {
   try {
     localStorage.removeItem(SESSION_STORAGE_KEY);
-  } catch {}
+  } catch (err) {
+    // Storage access unavailable
+  }
 };
 
 export function App() {
@@ -114,7 +123,7 @@ export function App() {
     try {
       const saved = localStorage.getItem('bingo_sound_enabled');
       return saved !== null ? JSON.parse(saved) : true;
-    } catch {
+    } catch (err) {
       return true;
     }
   });
@@ -123,7 +132,7 @@ export function App() {
     try {
       const saved = localStorage.getItem('bingo_voice_enabled');
       return saved !== null ? JSON.parse(saved) : true;
-    } catch {
+    } catch (err) {
       return true;
     }
   });
@@ -131,13 +140,17 @@ export function App() {
   useEffect(() => {
     try {
       localStorage.setItem('bingo_sound_enabled', JSON.stringify(soundEnabled));
-    } catch {}
+    } catch (err) {
+      // Storage unavailable
+    }
   }, [soundEnabled]);
 
   useEffect(() => {
     try {
       localStorage.setItem('bingo_voice_enabled', JSON.stringify(voiceEnabled));
-    } catch {}
+    } catch (err) {
+      // Storage unavailable
+    }
   }, [voiceEnabled]);
 
   const [isHelpOpen, setIsHelpOpen] = useState<boolean>(false);
@@ -189,13 +202,15 @@ export function App() {
   const fetchRooms = useCallback(async () => {
     setIsLoadingRadar(true);
     try {
-      const res = await fetch('/api/rooms');
+      const res = await fetch('/api/rooms', {
+        signal: AbortSignal.timeout(6000),
+      });
       if (res.ok) {
         const data = await res.json();
         setPublicRooms(data.rooms || []);
       }
     } catch (err) {
-      console.warn('Failed to fetch rooms:', err);
+      // Transient network or polling timeout; next interval will retry
     } finally {
       setIsLoadingRadar(false);
     }
@@ -576,6 +591,7 @@ export function App() {
             card_count: initialSession.cards?.length || 1,
             token: initialSession.playerToken,
           }),
+          signal: AbortSignal.timeout(8000),
         });
 
         if (res.ok) {
@@ -596,7 +612,7 @@ export function App() {
           setStatusBanner('A sala anterior não está mais disponível.');
         }
       } catch (err) {
-        console.warn('Network issue while verifying restored session:', err);
+        // Network timeout or unreachable; session remains in cache for next attempt
       }
     };
 
@@ -632,6 +648,7 @@ export function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ player_id: playerId }),
+        signal: AbortSignal.timeout(10000),
       });
       if (!res.ok) {
         const errData = await res.json();
@@ -655,6 +672,7 @@ export function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(config),
+        signal: AbortSignal.timeout(10000),
       });
       if (!res.ok) throw new Error('Falha ao criar sala');
       const data = await res.json();
@@ -704,6 +722,7 @@ export function App() {
           card_count: data.cardCount,
           pin: data.pin,
         }),
+        signal: AbortSignal.timeout(10000),
       });
       if (!res.ok) {
         const errData = await res.json();

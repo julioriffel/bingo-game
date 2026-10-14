@@ -19,13 +19,18 @@ class RedisService:
                 self.redis = aioredis.from_url(
                     settings.REDIS_URL,
                     decode_responses=True,
-                    socket_connect_timeout=2.0
+                    socket_connect_timeout=2.0,
+                    socket_timeout=3.0,
                 )
                 await self.redis.ping()
                 self.is_connected = True
                 logger.info("Connected to Redis at %s", settings.REDIS_URL)
-            except Exception as e:
-                logger.warning("Could not connect to Redis: %s. Using in-memory fallback.", e)
+            except (aioredis.RedisError, ConnectionError, OSError) as err:
+                logger.warning(
+                    "Could not connect to Redis: %s. Using in-memory Pub/Sub fallback.",
+                    err,
+                    extra={"redis_url": settings.REDIS_URL}
+                )
                 self.is_connected = False
                 self.redis = None
         else:
@@ -34,8 +39,13 @@ class RedisService:
 
     async def close(self):
         if self.redis:
-            await self.redis.close()
-            self.is_connected = False
+            try:
+                await self.redis.close()
+            except Exception as err:
+                logger.warning("Error closing Redis connection: %s", err)
+            finally:
+                self.is_connected = False
+                self.redis = None
 
     async def publish(self, channel: str, message: dict[str, Any]):
         """Publish a JSON message to a Redis channel or in-memory subscribers."""
@@ -43,19 +53,29 @@ class RedisService:
         if self.is_connected and self.redis:
             try:
                 await self.redis.publish(channel, payload_str)
-            except Exception as e:
-                logger.error("Error publishing to Redis: %s", e)
+            except (aioredis.RedisError, ConnectionError, OSError) as err:
+                logger.warning(
+                    "Failed to publish to Redis channel '%s': %s. Operating in local degraded mode.",
+                    channel,
+                    err
+                )
+                self.is_connected = False
 
         # Always trigger local listeners
         if channel in self._local_subscribers:
-            for callback in self._local_subscribers[channel]:
+            for callback in list(self._local_subscribers[channel]):
                 try:
                     if asyncio.iscoroutinefunction(callback):
                         await callback(message)
                     else:
                         callback(message)
                 except Exception as e:
-                    logger.error("Error in local subscriber: %s", e)
+                    logger.error(
+                        "Error in local subscriber callback for channel '%s': %s",
+                        channel,
+                        e,
+                        exc_info=True
+                    )
 
     def subscribe_local(self, channel: str, callback: Callable[[dict[str, Any]], Any]):
         """Register a local callback for channel messages."""

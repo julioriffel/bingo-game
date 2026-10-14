@@ -29,7 +29,13 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
   onCreate,
   isLoading = false,
 }) => {
-  const [hostName, setHostName] = useState(localStorage.getItem('bingo_player_name') || '');
+  const [hostName, setHostName] = useState(() => {
+    try {
+      return localStorage.getItem('bingo_player_name') || '';
+    } catch (err) {
+      return '';
+    }
+  });
   const [roomName, setRoomName] = useState('');
   const [winCondition, setWinCondition] = useState<'line' | 'blackout' | 'multi_stage'>('multi_stage');
   const [maxCards, setMaxCards] = useState<number>(2);
@@ -98,7 +104,11 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!hostName.trim()) return;
-    localStorage.setItem('bingo_player_name', hostName.trim());
+    try {
+      localStorage.setItem('bingo_player_name', hostName.trim());
+    } catch (err) {
+      // Storage access blocked or unavailable
+    }
 
     // Filter out prizes with empty titles
     const validPrizes = prizes

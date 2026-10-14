@@ -25,18 +25,27 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str):
             data = await websocket.receive_text()
             try:
                 msg = json.loads(data)
-            except json.JSONDecodeError:
+                if not isinstance(msg, dict):
+                    await connection_manager.send_personal(websocket, {
+                        "type": "error", "payload": {"message": "Payload raiz deve ser um objeto JSON"}
+                    })
+                    continue
+            except (json.JSONDecodeError, ValueError):
                 await connection_manager.send_personal(websocket, {
                     "type": "error", "payload": {"message": "JSON inválido"}
                 })
                 continue
 
             msg_type = msg.get("type")
-            payload = msg.get("payload", {})
+            payload = msg.get("payload", {}) if isinstance(msg.get("payload"), dict) else {}
+
+            # Current authenticated player for this socket
+            meta = connection_manager.socket_meta.get(websocket)
+            current_player_id = meta[1] if meta else None
 
             # Record user/manager activity for non-ping messages
-            active_id = payload.get("player_id") or payload.get("host_id")
-            if active_id:
+            active_id = payload.get("player_id") or payload.get("host_id") or current_player_id
+            if active_id and not active_id.startswith("anon_"):
                 room_service.touch_manager_activity(code, active_id)
 
             if msg_type == "ping":
@@ -44,7 +53,7 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str):
 
             elif msg_type == "manager_heartbeat":
                 host_id = payload.get("host_id")
-                if host_id:
+                if host_id and current_player_id == room.host_id and host_id == room.host_id:
                     room_service.touch_manager_activity(code, host_id)
                     await connection_manager.send_personal(websocket, {
                         "type": "manager_heartbeat_ack",
@@ -106,35 +115,63 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str):
                             "contest_window_seconds": room.contest_window_seconds,
                         }
                     })
+                else:
+                    await connection_manager.send_personal(websocket, {
+                        "type": "error", "payload": {"message": "Autenticação da sessão inválida"}
+                    })
 
             elif msg_type == "start_game":
                 host_id = payload.get("host_id")
+                if not current_player_id or current_player_id != room.host_id or host_id != room.host_id:
+                    await connection_manager.send_personal(websocket, {
+                        "type": "error", "payload": {"message": "Apenas o Host autorizado pode iniciar a partida"}
+                    })
+                    continue
                 try:
                     await room_service.start_game(code, host_id)
                 except Exception as e:
+                    logger.warning("Falha ao iniciar partida na sala %s: %s", code, e)
                     await connection_manager.send_personal(websocket, {
                         "type": "error", "payload": {"message": str(e)}
                     })
 
             elif msg_type == "draw_next":
                 host_id = payload.get("host_id")
-                if room.host_id == host_id:
+                if current_player_id == room.host_id and room.host_id == host_id:
                     await room_service.draw_next_ball(code)
 
             elif msg_type == "toggle_pause":
                 host_id = payload.get("host_id")
+                if not current_player_id or current_player_id != room.host_id:
+                    await connection_manager.send_personal(websocket, {
+                        "type": "error", "payload": {"message": "Não autorizado para pausar/retomar a partida"}
+                    })
+                    continue
                 try:
                     await room_service.toggle_pause(code, host_id)
                 except Exception as e:
+                    logger.warning("Erro em toggle_pause: %s", e)
                     await connection_manager.send_personal(websocket, {
                         "type": "error", "payload": {"message": str(e)}
                     })
 
             elif msg_type == "set_speed":
                 host_id = payload.get("host_id")
-                interval = payload.get("interval", 5.0)
+                if not current_player_id or current_player_id != room.host_id:
+                    await connection_manager.send_personal(websocket, {
+                        "type": "error", "payload": {"message": "Não autorizado para alterar velocidade"}
+                    })
+                    continue
+                raw_interval = payload.get("interval", 5.0)
                 try:
-                    await room_service.set_speed(code, host_id, float(interval))
+                    interval = float(raw_interval)
+                except (ValueError, TypeError):
+                    await connection_manager.send_personal(websocket, {
+                        "type": "error", "payload": {"message": "Intervalo inválido"}
+                    })
+                    continue
+                try:
+                    await room_service.set_speed(code, host_id, interval)
                 except Exception as e:
                     await connection_manager.send_personal(websocket, {
                         "type": "error", "payload": {"message": str(e)}
@@ -143,33 +180,61 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str):
             elif msg_type == "mark_number":
                 player_id = payload.get("player_id")
                 card_id = payload.get("card_id")
-                number = payload.get("number")
-                if player_id and card_id and number is not None:
-                    room_service.mark_number(code, player_id, card_id, int(number))
+                raw_number = payload.get("number")
+                if player_id and current_player_id == player_id and card_id and raw_number is not None:
+                    try:
+                        number = int(raw_number)
+                        room_service.mark_number(code, player_id, card_id, number)
+                    except (ValueError, TypeError):
+                        pass
 
             elif msg_type == "call_bingo":
                 player_id = payload.get("player_id")
                 card_id = payload.get("card_id")
-                valid, reason, cand_info = await room_service.call_bingo(code, player_id, card_id)
-                if not valid:
+                if not current_player_id or current_player_id != player_id:
                     await connection_manager.send_personal(websocket, {
                         "type": "bingo_invalid",
-                        "payload": {"reason": reason}
+                        "payload": {"reason": "Sessão não autorizada para cantar Bingo"}
+                    })
+                    continue
+                try:
+                    valid, reason, cand_info = await room_service.call_bingo(code, player_id, card_id)
+                    if not valid:
+                        await connection_manager.send_personal(websocket, {
+                            "type": "bingo_invalid",
+                            "payload": {"reason": reason}
+                        })
+                except Exception as e:
+                    logger.exception("Erro ao validar bingo na sala %s", code)
+                    await connection_manager.send_personal(websocket, {
+                        "type": "bingo_invalid",
+                        "payload": {"reason": "Erro interno ao processar Bingo"}
                     })
 
             elif msg_type == "pick_tiebreaker_stone":
                 player_id = payload.get("player_id")
                 stone_idx = payload.get("stone_index")
-                if player_id:
-                    await room_service.pick_contest_stone(code, player_id, stone_idx)
+                if player_id and current_player_id == player_id:
+                    safe_idx = None
+                    if stone_idx is not None:
+                        try:
+                            safe_idx = int(stone_idx)
+                        except (ValueError, TypeError):
+                            safe_idx = None
+                    await room_service.pick_contest_stone(code, player_id, safe_idx)
 
             elif msg_type == "add_prize":
                 host_id = payload.get("host_id")
                 title = payload.get("title", "")
                 description = payload.get("description", "")
-                if host_id and title:
+                if not current_player_id or current_player_id != room.host_id or host_id != room.host_id:
+                    await connection_manager.send_personal(websocket, {
+                        "type": "error", "payload": {"message": "Apenas o Host pode adicionar prêmios"}
+                    })
+                    continue
+                if title:
                     try:
-                        await room_service.add_prize(code, host_id, title, description)
+                        await room_service.add_prize(code, host_id, str(title), str(description))
                     except Exception as e:
                         await connection_manager.send_personal(websocket, {
                             "type": "error", "payload": {"message": str(e)}
@@ -177,6 +242,11 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str):
 
             elif msg_type == "claim_manager":
                 player_id = payload.get("player_id")
+                if not current_player_id or current_player_id != player_id:
+                    await connection_manager.send_personal(websocket, {
+                        "type": "error", "payload": {"message": "Sessão não autorizada"}
+                    })
+                    continue
                 try:
                     await room_service.claim_manager(code, player_id)
                 except Exception as e:
@@ -187,15 +257,25 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str):
             elif msg_type == "remove_prize":
                 host_id = payload.get("host_id")
                 prize_id = payload.get("prize_id")
-                if host_id and prize_id:
+                if not current_player_id or current_player_id != room.host_id or host_id != room.host_id:
+                    await connection_manager.send_personal(websocket, {
+                        "type": "error", "payload": {"message": "Apenas o Host pode remover prêmios"}
+                    })
+                    continue
+                if prize_id:
                     try:
-                        await room_service.remove_prize(code, host_id, prize_id)
+                        await room_service.remove_prize(code, host_id, str(prize_id))
                     except Exception as e:
                         await connection_manager.send_personal(websocket, {
                             "type": "error", "payload": {"message": str(e)}
                         })
 
     except WebSocketDisconnect:
+        logger.info("Cliente WebSocket desconectado normalmente", extra={"room_code": code})
+    except Exception as exc:
+        logger.error("Exceção não tratada no loop WebSocket: %s", exc, extra={"room_code": code}, exc_info=True)
+    finally:
+        # Guaranteed cleanup on disconnect or failure
         meta = connection_manager.disconnect(websocket)
         if meta:
             r_code, p_id = meta
@@ -206,18 +286,21 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str):
                     r.players[p_id].last_active_at = time.time()
                     if r.host_id == p_id:
                         r.manager_last_active_at = time.time()
-                    await connection_manager.broadcast_to_room(r_code, {
-                        "type": "player_list_update",
-                        "payload": {
-                            "host_id": r.host_id,
-                            "host_name": r.host_name,
-                            "manager_last_active_at": r.manager_last_active_at,
-                            "manager_inactive": r.is_manager_inactive(),
-                            "player_count": r.get_player_count(),
-                            "players": [
-                                {"id": p.id, "name": p.name, "is_host": p.is_host, "connected": p.connected}
-                                for p in r.players.values() if not p.is_host
-                            ],
-                            "users": r.get_connected_users_list(),
-                        }
-                    })
+                    try:
+                        await connection_manager.broadcast_to_room(r_code, {
+                            "type": "player_list_update",
+                            "payload": {
+                                "host_id": r.host_id,
+                                "host_name": r.host_name,
+                                "manager_last_active_at": r.manager_last_active_at,
+                                "manager_inactive": r.is_manager_inactive(),
+                                "player_count": r.get_player_count(),
+                                "players": [
+                                    {"id": p.id, "name": p.name, "is_host": p.is_host, "connected": p.connected}
+                                    for p in r.players.values() if not p.is_host
+                                ],
+                                "users": r.get_connected_users_list(),
+                            }
+                        })
+                    except Exception as err:
+                        logger.warning("Falha ao propagar player_list_update na desconexão: %s", err)

@@ -44,7 +44,9 @@ export const TiebreakerModal: React.FC<TiebreakerModalProps> = ({
           spread: 70,
           origin: { y: 0.6 },
         });
-      } catch {}
+      } catch (err) {
+        // Confetti canvas animation safely ignored on unsupported devices
+      }
     }
   }, [contest?.status]);
 

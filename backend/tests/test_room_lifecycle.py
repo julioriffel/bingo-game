@@ -89,3 +89,48 @@ async def test_room_game_lifecycle_and_bingo():
     assert winner is not None
     assert winner.player_name == "Jogador 1"
     await room_service.resolve_contest_window(code)
+
+def test_private_room_pin_enforcement():
+    # 1. Create Private Room via API
+    res = client.post("/api/rooms", json={
+        "host_name": "Host Privado",
+        "name": "Sala Secreta",
+        "is_public": False,
+    })
+    assert res.status_code == 200
+    created = res.json()
+    room_code = created["room_code"]
+    pin = created["pin"]
+
+    # 2. Try to join without PIN -> 403 Forbidden
+    res_no_pin = client.post(f"/api/rooms/{room_code}/join", json={
+        "player_name": "Invasor",
+    })
+    assert res_no_pin.status_code == 403
+
+    # 3. Try to join with wrong PIN -> 403 Forbidden
+    res_wrong_pin = client.post(f"/api/rooms/{room_code}/join", json={
+        "player_name": "Invasor",
+        "pin": "9999",
+    })
+    assert res_wrong_pin.status_code == 403
+
+    # 4. Join with correct PIN -> 200 OK
+    res_correct_pin = client.post(f"/api/rooms/{room_code}/join", json={
+        "player_name": "Convidado",
+        "pin": pin,
+    })
+    assert res_correct_pin.status_code == 200
+    assert res_correct_pin.json()["player_name"] == "Convidado"
+
+def test_cleanup_expired_rooms():
+    room, _ = room_service.create_room(host_name="Host Temporário", is_public=True)
+    room.status = RoomStatus.FINISHED
+    # Artificially set manager_last_active_at and created_at to 2 days ago
+    room.manager_last_active_at = 1000.0
+    room.created_at = 1000.0
+
+    evicted = room_service.cleanup_expired_rooms(max_idle_seconds=60)
+    assert evicted >= 1
+    assert room.code not in room_service.rooms
+

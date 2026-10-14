@@ -191,7 +191,7 @@ def check_card_victory_detailed(
 
     is_blackout_mode = (
         win_condition == WinCondition.BLACKOUT or
-        (win_condition == WinCondition.MULTI_STAGE and current_stage == GameStage.BLACKOUT)
+        current_stage == GameStage.BLACKOUT
     )
 
     if is_blackout_mode:
@@ -211,7 +211,7 @@ def check_card_victory_detailed(
     if not completed_patterns:
         return VictoryValidationResult(
             is_winner=False,
-            rejection_reason="Bingo não confirmado: a cartela não atende aos critérios com as pedras sorteadas."
+            rejection_reason=f"Bingo não confirmado: a cartela não atende aos critérios de {target_win_type} com as pedras sorteadas."
         )
 
     # Rule: Prevent duplicate prizes with the same line / blackout

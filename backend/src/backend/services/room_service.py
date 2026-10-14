@@ -92,8 +92,25 @@ class RoomService:
             contest_window_seconds=contest_window_seconds,
             manager_last_active_at=time.time(),
         )
+        self._sync_prize_targets(room)
         self.rooms[room_code] = room
         return room, host_player
+
+    def _sync_prize_targets(self, room: Room):
+        if not room.prizes:
+            return
+        total = len(room.prizes)
+        for idx, prize in enumerate(room.prizes):
+            prize.order = idx + 1
+            if room.win_condition == WinCondition.LINE:
+                prize.target_type = "line"
+            elif room.win_condition == WinCondition.BLACKOUT:
+                prize.target_type = "blackout"
+            else:
+                if idx == total - 1:
+                    prize.target_type = "blackout"
+                else:
+                    prize.target_type = "line"
 
     def get_room(self, room_code: str) -> Optional[Room]:
         return self.rooms.get(room_code)
@@ -145,12 +162,21 @@ class RoomService:
             raise PermissionError("Apenas o Host pode iniciar a partida.")
 
         room.status = RoomStatus.PLAYING
-        if room.win_condition == WinCondition.MULTI_STAGE:
-            room.stage = GameStage.LINE
+        self._sync_prize_targets(room)
+
+        if room.win_condition == WinCondition.BLACKOUT:
+            room.stage = GameStage.BLACKOUT
         elif room.win_condition == WinCondition.LINE:
             room.stage = GameStage.LINE
+        elif room.prizes:
+            unawarded = [p for p in room.prizes if p.winner_id is None]
+            if len(unawarded) == 1:
+                # Single prize in room is the final prize -> Cartela Completa
+                room.stage = GameStage.BLACKOUT
+            else:
+                room.stage = GameStage.LINE
         else:
-            room.stage = GameStage.BLACKOUT
+            room.stage = GameStage.LINE
 
         # Broadcast game started
         await connection_manager.broadcast_to_room(room_code, {
@@ -261,7 +287,7 @@ class RoomService:
         room = self.rooms.get(room_code)
         if not room or room.host_id != host_id:
             raise PermissionError("Não autorizado.")
-        room.draw_interval = max(2.0, min(interval, 20.0))
+        room.draw_interval = max(2.0, min(interval, 60.0))
         await connection_manager.broadcast_to_room(room_code, {
             "type": "speed_changed",
             "payload": {"draw_interval": room.draw_interval}
@@ -293,9 +319,20 @@ class RoomService:
             order=len(room.prizes) + 1,
         )
         room.prizes.append(prize)
+        self._sync_prize_targets(room)
+        if room.status == RoomStatus.PLAYING:
+            unawarded = [p for p in room.prizes if p.winner_id is None]
+            if len(unawarded) == 1:
+                room.stage = GameStage.BLACKOUT
+            elif len(unawarded) > 1 and room.win_condition != WinCondition.BLACKOUT:
+                room.stage = GameStage.LINE
+
         await connection_manager.broadcast_to_room(room_code, {
             "type": "prizes_updated",
-            "payload": {"prizes": [p.model_dump() for p in room.prizes]}
+            "payload": {
+                "prizes": [p.model_dump() for p in room.prizes],
+                "stage": room.stage.value,
+            }
         })
         return prize
 
@@ -304,12 +341,18 @@ class RoomService:
         if not room or room.host_id != host_id:
             raise PermissionError("Não autorizado.")
         room.prizes = [p for p in room.prizes if p.id != prize_id]
-        # Re-index order
-        for idx, p in enumerate(room.prizes, start=1):
-            p.order = idx
+        self._sync_prize_targets(room)
+        if room.status == RoomStatus.PLAYING:
+            unawarded = [p for p in room.prizes if p.winner_id is None]
+            if len(unawarded) == 1:
+                room.stage = GameStage.BLACKOUT
+
         await connection_manager.broadcast_to_room(room_code, {
             "type": "prizes_updated",
-            "payload": {"prizes": [p.model_dump() for p in room.prizes]}
+            "payload": {
+                "prizes": [p.model_dump() for p in room.prizes],
+                "stage": room.stage.value,
+            }
         })
         return True
 
@@ -705,36 +748,12 @@ class RoomService:
         prize_announcement = f" e faturou: 🎁 {awarded_prize.title}!" if awarded_prize else "!"
         tb_mention = " após desempate da pedra mais alta" if was_tiebreaker else ""
 
-        # Check multi-stage progression
-        if room.win_condition == WinCondition.MULTI_STAGE and room.stage == GameStage.LINE:
-            room.stage = GameStage.BLACKOUT
-            await connection_manager.broadcast_to_room(room_code, {
-                "type": "bingo_valid",
-                "payload": {
-                    "winner": winner_info.model_dump(),
-                    "card_id": winner_cand.card_id,
-                    "pattern_id": winner_cand.pattern_id,
-                    "pattern_type": winner_cand.pattern_type,
-                    "pattern_name": winner_cand.pattern_name,
-                    "line_index": winner_cand.line_index,
-                    "winning_cells": winner_cand.winning_cells,
-                    "winning_numbers": winner_cand.winning_numbers,
-                    "on_ball": on_ball,
-                    "was_tiebreaker": was_tiebreaker,
-                    "winning_stone": winner_cand.chosen_stone if was_tiebreaker else None,
-                    "log_entry": win_log_entry.model_dump(),
-                    "game_log": [e.model_dump() for e in room.game_log],
-                    "awarded_prize": awarded_prize.model_dump() if awarded_prize else None,
-                    "prizes": [p.model_dump() for p in room.prizes],
-                    "next_stage": "blackout",
-                    "stage_name": "Cartela Cheia",
-                    "message": f"Parabéns! {winner_cand.player_name} bateu Linha ({winner_cand.pattern_name}){tb_mention}{prize_announcement} A partida continua para Cartela Cheia!",
-                }
-            })
-            asyncio.create_task(self._resume_after_delay(room_code, 5.0))
-        else:
-            has_more_prizes = any(p.winner_id is None for p in room.prizes)
-            if has_more_prizes and room.win_condition == WinCondition.LINE:
+        # Check prize progression and multi-stage transitions
+        unawarded = [p for p in room.prizes if p.winner_id is None]
+        if room.prizes:
+            if len(unawarded) == 0:
+                room.status = RoomStatus.FINISHED
+                room.stage = GameStage.COMPLETED
                 await connection_manager.broadcast_to_room(room_code, {
                     "type": "bingo_valid",
                     "payload": {
@@ -754,8 +773,123 @@ class RoomService:
                         "awarded_prize": awarded_prize.model_dump() if awarded_prize else None,
                         "prizes": [p.model_dump() for p in room.prizes],
                         "next_stage": None,
+                        "stage_name": "Fim de Jogo",
+                        "game_over": True,
+                        "message": f"🎉 BINGO! Parabéns {winner_cand.player_name} faturou o Grande Prêmio Final ({winner_cand.pattern_name}){tb_mention}{prize_announcement}",
+                    }
+                })
+            elif len(unawarded) == 1:
+                last_prize = unawarded[0]
+                if room.win_condition == WinCondition.LINE:
+                    room.stage = GameStage.LINE
+                    await connection_manager.broadcast_to_room(room_code, {
+                        "type": "bingo_valid",
+                        "payload": {
+                            "winner": winner_info.model_dump(),
+                            "card_id": winner_cand.card_id,
+                            "pattern_id": winner_cand.pattern_id,
+                            "pattern_type": winner_cand.pattern_type,
+                            "pattern_name": winner_cand.pattern_name,
+                            "line_index": winner_cand.line_index,
+                            "winning_cells": winner_cand.winning_cells,
+                            "winning_numbers": winner_cand.winning_numbers,
+                            "on_ball": on_ball,
+                            "was_tiebreaker": was_tiebreaker,
+                            "winning_stone": winner_cand.chosen_stone if was_tiebreaker else None,
+                            "log_entry": win_log_entry.model_dump(),
+                            "game_log": [e.model_dump() for e in room.game_log],
+                            "awarded_prize": awarded_prize.model_dump() if awarded_prize else None,
+                            "prizes": [p.model_dump() for p in room.prizes],
+                            "next_stage": "line",
+                            "stage_name": "Linha",
+                            "game_over": False,
+                            "message": f"Parabéns! {winner_cand.player_name} bateu Linha ({winner_cand.pattern_name}){tb_mention}{prize_announcement} A partida continua para o último prêmio de Linha: 🎁 {last_prize.title}!",
+                        }
+                    })
+                    asyncio.create_task(self._resume_after_delay(room_code, 5.0))
+                else:
+                    # Exactly 1 unawarded prize remains: Strictly transition to Cartela Completa
+                    room.stage = GameStage.BLACKOUT
+                    await connection_manager.broadcast_to_room(room_code, {
+                        "type": "bingo_valid",
+                        "payload": {
+                            "winner": winner_info.model_dump(),
+                            "card_id": winner_cand.card_id,
+                            "pattern_id": winner_cand.pattern_id,
+                            "pattern_type": winner_cand.pattern_type,
+                            "pattern_name": winner_cand.pattern_name,
+                            "line_index": winner_cand.line_index,
+                            "winning_cells": winner_cand.winning_cells,
+                            "winning_numbers": winner_cand.winning_numbers,
+                            "on_ball": on_ball,
+                            "was_tiebreaker": was_tiebreaker,
+                            "winning_stone": winner_cand.chosen_stone if was_tiebreaker else None,
+                            "log_entry": win_log_entry.model_dump(),
+                            "game_log": [e.model_dump() for e in room.game_log],
+                            "awarded_prize": awarded_prize.model_dump() if awarded_prize else None,
+                            "prizes": [p.model_dump() for p in room.prizes],
+                            "next_stage": "blackout",
+                            "stage_name": "Cartela Cheia",
+                            "game_over": False,
+                            "message": f"Parabéns! {winner_cand.player_name} bateu Linha ({winner_cand.pattern_name}){tb_mention}{prize_announcement} A partida avança para a CARTELA COMPLETA disputando: 🏆 {last_prize.title}!",
+                        }
+                    })
+                    asyncio.create_task(self._resume_after_delay(room_code, 5.0))
+            else:
+                # Multiple preliminary prizes remain: Keep stage in LINE
+                next_prize = unawarded[0]
+                room.stage = GameStage.LINE
+                await connection_manager.broadcast_to_room(room_code, {
+                    "type": "bingo_valid",
+                    "payload": {
+                        "winner": winner_info.model_dump(),
+                        "card_id": winner_cand.card_id,
+                        "pattern_id": winner_cand.pattern_id,
+                        "pattern_type": winner_cand.pattern_type,
+                        "pattern_name": winner_cand.pattern_name,
+                        "line_index": winner_cand.line_index,
+                        "winning_cells": winner_cand.winning_cells,
+                        "winning_numbers": winner_cand.winning_numbers,
+                        "on_ball": on_ball,
+                        "was_tiebreaker": was_tiebreaker,
+                        "winning_stone": winner_cand.chosen_stone if was_tiebreaker else None,
+                        "log_entry": win_log_entry.model_dump(),
+                        "game_log": [e.model_dump() for e in room.game_log],
+                        "awarded_prize": awarded_prize.model_dump() if awarded_prize else None,
+                        "prizes": [p.model_dump() for p in room.prizes],
+                        "next_stage": "line",
+                        "stage_name": "Linha",
                         "game_over": False,
-                        "message": f"Parabéns! {winner_cand.player_name} bateu Linha ({winner_cand.pattern_name}){tb_mention}{prize_announcement} A partida continua para os próximos prêmios!",
+                        "message": f"Parabéns! {winner_cand.player_name} bateu Linha ({winner_cand.pattern_name}){tb_mention}{prize_announcement} A partida continua para o próximo prêmio de Linha: 🎁 {next_prize.title}!",
+                    }
+                })
+                asyncio.create_task(self._resume_after_delay(room_code, 5.0))
+        else:
+            # 0 prizes configured
+            if room.win_condition == WinCondition.MULTI_STAGE and room.stage == GameStage.LINE:
+                room.stage = GameStage.BLACKOUT
+                await connection_manager.broadcast_to_room(room_code, {
+                    "type": "bingo_valid",
+                    "payload": {
+                        "winner": winner_info.model_dump(),
+                        "card_id": winner_cand.card_id,
+                        "pattern_id": winner_cand.pattern_id,
+                        "pattern_type": winner_cand.pattern_type,
+                        "pattern_name": winner_cand.pattern_name,
+                        "line_index": winner_cand.line_index,
+                        "winning_cells": winner_cand.winning_cells,
+                        "winning_numbers": winner_cand.winning_numbers,
+                        "on_ball": on_ball,
+                        "was_tiebreaker": was_tiebreaker,
+                        "winning_stone": winner_cand.chosen_stone if was_tiebreaker else None,
+                        "log_entry": win_log_entry.model_dump(),
+                        "game_log": [e.model_dump() for e in room.game_log],
+                        "awarded_prize": awarded_prize.model_dump() if awarded_prize else None,
+                        "prizes": [p.model_dump() for p in room.prizes],
+                        "next_stage": "blackout",
+                        "stage_name": "Cartela Cheia",
+                        "game_over": False,
+                        "message": f"Parabéns! {winner_cand.player_name} bateu Linha ({winner_cand.pattern_name}){tb_mention}! A partida continua para Cartela Cheia!",
                     }
                 })
                 asyncio.create_task(self._resume_after_delay(room_code, 5.0))
@@ -781,6 +915,7 @@ class RoomService:
                         "awarded_prize": awarded_prize.model_dump() if awarded_prize else None,
                         "prizes": [p.model_dump() for p in room.prizes],
                         "next_stage": None,
+                        "stage_name": "Fim de Jogo",
                         "game_over": True,
                         "message": f"🎉 BINGO! Parabéns {winner_cand.player_name} venceu a partida ({winner_cand.pattern_name}){tb_mention}{prize_announcement}",
                     }

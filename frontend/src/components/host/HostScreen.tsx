@@ -334,7 +334,7 @@ export const HostScreen: React.FC<HostScreenProps> = ({
             {gameState.draw_mode === 'auto' && (
               <div className="flex items-center gap-1.5 bg-slate-950 p-1 rounded-2xl border border-slate-800">
                 <span className="text-[10px] font-bold text-slate-500 px-2 uppercase">Velocidade:</span>
-                {[3, 5, 7, 10].map((s) => (
+                {[5, 15, 30].map((s) => (
                   <button
                     key={s}
                     onClick={() => onSetSpeed(s)}

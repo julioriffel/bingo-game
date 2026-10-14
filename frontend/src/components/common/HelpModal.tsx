@@ -149,16 +149,16 @@ export const HelpModal: React.FC<HelpModalProps> = ({
                 </h4>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   <div className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800 space-y-1.5">
-                    <span className="font-bold text-amber-300 text-xs">Modo Multi-Etapas</span>
+                    <span className="font-bold text-amber-300 text-xs">Modo Multi-Etapas & Prêmios</span>
                     <p className="text-[11px] text-slate-400">
-                      <strong>1ª Etapa:</strong> Vence a primeira quina (linha horizontal, vertical ou diagonal).<br />
-                      <strong>2ª Etapa:</strong> Segue até a Cartela Cheia (Blackout).
+                      <strong>Prêmios Preliminares:</strong> Vencem na modalidade Linha (horizontal, vertical ou diagonal).<br />
+                      <strong>Último Prêmio:</strong> Comuta estritamente para <strong>Cartela Completa (Blackout)</strong>. Uma linha nunca vence o último prêmio!
                     </p>
                   </div>
                   <div className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800 space-y-1.5">
-                    <span className="font-bold text-indigo-300 text-xs">Cartela Cheia (Blackout)</span>
+                    <span className="font-bold text-indigo-300 text-xs">Cartela Completa (Blackout)</span>
                     <p className="text-[11px] text-slate-400">
-                      Todos os 24 números da cartela (+ casa FREE) devem ser sorteados. O grande prêmio do bingo!
+                      Todos os 24 números da cartela (+ casa FREE) devem ser sorteados. Exigido para o grande prêmio final da rodada!
                     </p>
                   </div>
                   <div className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800 space-y-1.5">
@@ -186,13 +186,13 @@ export const HelpModal: React.FC<HelpModalProps> = ({
               <div className="space-y-3">
                 <h4 className="font-bold text-slate-100 uppercase tracking-wider text-xs flex items-center gap-2">
                   <Flame className="w-4 h-4 text-amber-400" />
-                  Bingos Simultâneos & Desempate da Pedra Mais Alta
+                  Janela de Contestação Variável & Desempate da Pedra Mais Alta
                 </h4>
                 <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
                   <div className="flex items-start gap-2.5">
                     <Clock className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
                     <p className="text-xs text-slate-300">
-                      <strong>1. Janela de Contestação (10 segundos):</strong> Quando o 1º jogador canta bingo válido, o sorteio é pausado e uma contagem de 10 segundos é aberta. Outros jogadores que fecharam bingo <strong>na mesma pedra</strong> têm até o fim do tempo para cantar.
+                      <strong>1. Janela de Contestação Variável (10s, 30s ou 60s):</strong> Configurada pelo Manager na criação da sala. Quando o 1º jogador canta bingo válido, o sorteio é pausado e a contagem regressiva é aberta e narrada em voz alta. Outros jogadores que fecharam bingo <strong>na mesma pedra</strong> têm até o fim do tempo para cantar.
                     </p>
                   </div>
                   <div className="flex items-start gap-2.5">
@@ -361,21 +361,21 @@ export const HelpModal: React.FC<HelpModalProps> = ({
                 </h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800 space-y-1">
-                    <strong className="text-xs text-slate-200">Prêmios Customizados:</strong>
+                    <strong className="text-xs text-slate-200">Prêmios & Cartela Completa:</strong>
                     <p className="text-[11px] text-slate-400">
-                      Adicione prêmios com títulos e descrições personalizadas (ex: <em>"Fritadeira Airfryer - Oferecido pela Diretoria"</em>). Você pode usar modelos prontos como <em>Linha + Cheia</em> ou <em>1º, 2º e 3º Lugar</em>.
+                      Adicione prêmios personalizados. Os prêmios preliminares são disputados na modalidade <strong>Linha</strong>, e o último prêmio avança estritamente para <strong>Cartela Completa</strong>.
                     </p>
                   </div>
                   <div className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800 space-y-1">
                     <strong className="text-xs text-slate-200">Velocidade & Ritmo:</strong>
                     <p className="text-[11px] text-slate-400">
-                      Escolha entre <strong>Automático</strong> (3s, 5s padrão, 7s ou 10s por pedra) ou <strong>Manual</strong> para quem prefere tirar pedras físicas ou ditar o ritmo no microfone.
+                      Escolha entre <strong>Automático</strong> (5s padrão, 15s ou 30s por pedra) ou <strong>Manual</strong> para quem prefere ditar o ritmo no microfone ou globo físico.
                     </p>
                   </div>
                   <div className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800 space-y-1">
                     <strong className="text-xs text-slate-200">Janela de Contestação:</strong>
                     <p className="text-[11px] text-slate-400">
-                      Defina o tempo de contagem (5s, 10s padrão, 15s ou 20s) para que outros jogadores possam cantar na mesma pedra antes de definir o vencedor.
+                      Defina o tempo da janela (10s padrão, 30s ou 60s) para que outros jogadores possam cantar na mesma pedra antes de definir o vencedor ou abrir desempate.
                     </p>
                   </div>
                   <div className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800 space-y-1">

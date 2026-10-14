@@ -62,10 +62,11 @@ Cria uma sala de bingo com parâmetros customizados de rodada, prêmios e tempo 
   "contest_window_seconds": 10.0,
   "prizes": [
     { "title": "1º Prêmio: Cafeteira", "description": "Modo Linha" },
-    { "title": "2º Prêmio: Smart TV 50\"", "description": "Modo Cartela Cheia" }
+    { "title": "2º Prêmio: Smart TV 50\"", "description": "Modo Cartela Completa" }
   ]
 }
 ```
+*Nota: `draw_interval` aceita intervalos base de 5.0s, 15.0s e 30.0s. `contest_window_seconds` aceita janelas de 10.0s (padrão), 30.0s e 60.0s.*
 - **Resposta (200 OK):**
 ```json
 {
@@ -267,7 +268,7 @@ Formato padrão da mensagem:
 | `start_game` | `{ "host_id": "..." }` | Comando exclusivo do Host para iniciar a partida. |
 | `draw_next` | `{ "host_id": "..." }` | Sorteia a próxima pedra (no modo de sorteio manual). |
 | `toggle_pause` | `{ "host_id": "..." }` | Pausa ou retoma o sorteio automático. |
-| `set_speed` | `{ "host_id": "...", "interval": 4.0 }` | Ajusta o intervalo de sorteio automático (entre 2.0s e 20.0s). |
+| `set_speed` | `{ "host_id": "...", "interval": 15.0 }` | Ajusta o intervalo de sorteio automático (tempos base: 5s, 15s e 30s; suporte até 60s). |
 | `mark_number` | `{ "player_id": "...", "card_id": "...", "number": 42 }` | Alterna a marcação visual de um número na cartela do jogador. |
 | `call_bingo` | `{ "player_id": "...", "card_id": "..." }` | Jogador canta BINGO para validação estrita no servidor. |
 | `pick_tiebreaker_stone` | `{ "player_id": "...", "stone_index": 2 }` | Jogador seleciona sua pedra no minigame de desempate. |

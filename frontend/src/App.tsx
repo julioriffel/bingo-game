@@ -347,7 +347,10 @@ export function App() {
               },
             }));
             setStatusBanner(payload.message || 'Bingo cantado! Janela de validação aberta.');
-            if (soundEnabled && voiceEnabled) speakText('Atenção! Bingo cantado! Janela de dez segundos aberta!');
+            if (soundEnabled && voiceEnabled) {
+              const durationSec = Math.round(payload.duration_seconds || 10);
+              speakText(`Atenção! Bingo cantado! Janela de contestação de ${durationSec} segundos aberta!`);
+            }
           }
           break;
 

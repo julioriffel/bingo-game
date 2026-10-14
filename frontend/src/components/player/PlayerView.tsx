@@ -188,26 +188,42 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
             </span>
           </div>
           <div className="flex gap-2 overflow-x-auto pb-0.5 text-xs">
-            {gameState.prizes.map((p, idx) => (
-              <div
-                key={p.id || idx}
-                className={`py-1.5 px-2.5 rounded-xl border whitespace-nowrap shrink-0 flex items-center gap-1.5 text-xs ${
-                  p.winner_name
-                    ? 'bg-emerald-950/60 border-emerald-500/40 text-emerald-300'
-                    : 'bg-slate-950/70 border-slate-800 text-slate-200'
-                }`}
-              >
-                <span className="font-black font-mono text-[10px] text-amber-400">#{p.order || idx + 1}</span>
-                <span className="font-bold">{p.title}</span>
-                {p.winner_name ? (
-                  <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded font-black flex items-center gap-1">
-                    <Crown className="w-3 h-3 text-amber-400" /> {p.winner_name}
+            {gameState.prizes.map((p, idx) => {
+              const isLastPrize = idx === (gameState.prizes?.length || 0) - 1;
+              const isBlackout = p.target_type === 'blackout' || isLastPrize;
+
+              return (
+                <div
+                  key={p.id || idx}
+                  className={`py-1.5 px-2.5 rounded-xl border whitespace-nowrap shrink-0 flex items-center gap-1.5 text-xs ${
+                    p.winner_name
+                      ? 'bg-emerald-950/60 border-emerald-500/40 text-emerald-300'
+                      : isBlackout
+                      ? 'bg-gradient-to-r from-slate-950 to-slate-900 border-emerald-500/30 text-slate-100'
+                      : 'bg-slate-950/70 border-slate-800 text-slate-200'
+                  }`}
+                >
+                  <span className="font-black font-mono text-[10px] text-amber-400">#{p.order || idx + 1}</span>
+                  <span
+                    className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded border ${
+                      isBlackout
+                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                        : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                    }`}
+                  >
+                    {isBlackout ? '🏆 Cartela Completa' : 'Linha'}
                   </span>
-                ) : (
-                  <span className="text-[10px] text-amber-400/80 font-semibold">(Em disputa)</span>
-                )}
-              </div>
-            ))}
+                  <span className="font-bold">{p.title}</span>
+                  {p.winner_name ? (
+                    <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded font-black flex items-center gap-1">
+                      <Crown className="w-3 h-3 text-amber-400" /> {p.winner_name}
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-amber-400/80 font-semibold">(Em disputa)</span>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -222,7 +238,7 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
               {gameState.stage === 'line'
                 ? 'Fazer Linha (Horizontal, Vertical ou Diagonal)'
                 : gameState.stage === 'blackout'
-                ? 'Completar Cartela Cheia!'
+                ? 'Completar Cartela Completa!'
                 : 'Aguardando Início'}
             </span>
           </div>

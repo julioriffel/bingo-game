@@ -34,6 +34,7 @@ export interface Prize {
   title: string;
   description?: string;
   order: number;
+  target_type?: 'line' | 'blackout';
   winner_id?: string | null;
   winner_name?: string | null;
   won_at?: number | null;

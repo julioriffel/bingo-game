@@ -29,6 +29,7 @@ class Prize(BaseModel):
     title: str
     description: str = ""
     order: int = 1
+    target_type: str = "line"
     winner_id: str | None = None
     winner_name: str | None = None
     won_at: float | None = None

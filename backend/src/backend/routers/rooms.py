@@ -16,9 +16,9 @@ class CreateRoomRequest(BaseModel):
     win_condition: WinCondition = WinCondition.MULTI_STAGE
     max_cards_per_player: int = Field(default=4, ge=1, le=4)
     is_public: bool = True
-    draw_interval: float = Field(default=5.0, ge=2.0, le=20.0)
+    draw_interval: float = Field(default=5.0, ge=2.0, le=60.0)
     draw_mode: DrawMode = DrawMode.AUTO
-    contest_window_seconds: float = Field(default=10.0, ge=0.0, le=30.0)
+    contest_window_seconds: float = Field(default=10.0, ge=0.0, le=120.0)
     prizes: list[PrizeInput] = Field(default_factory=list)
 
 class JoinRoomRequest(BaseModel):

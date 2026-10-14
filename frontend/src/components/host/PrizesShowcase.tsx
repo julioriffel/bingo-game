@@ -115,6 +115,8 @@ export const PrizesShowcase: React.FC<PrizesShowcaseProps> = ({
           {prizes.map((prize, idx) => {
             const hasWon = Boolean(prize.winner_name);
             const isNext = idx === nextPrizeIndex && !hasWon;
+            const isLastPrize = idx === prizes.length - 1;
+            const isBlackout = prize.target_type === 'blackout' || isLastPrize;
 
             return (
               <div
@@ -124,12 +126,14 @@ export const PrizesShowcase: React.FC<PrizesShowcaseProps> = ({
                     ? 'bg-gradient-to-br from-emerald-950/90 via-slate-900 to-slate-950 border-2 border-emerald-500/70 shadow-lg shadow-emerald-950/50'
                     : isNext
                     ? 'bg-gradient-to-br from-amber-950/70 via-slate-900 to-slate-950 border-2 border-amber-500/70 shadow-lg shadow-amber-950/50 ring-1 ring-amber-400/50'
+                    : isBlackout
+                    ? 'bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900 border border-emerald-500/30'
                     : 'bg-slate-950/80 border border-slate-800'
                 }`}
               >
                 {/* Header Tag */}
                 <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1.5 flex-wrap">
                     <span
                       className={`font-black font-mono text-xs px-2.5 py-0.5 rounded-lg border ${
                         hasWon
@@ -140,6 +144,15 @@ export const PrizesShowcase: React.FC<PrizesShowcaseProps> = ({
                       }`}
                     >
                       {prize.order ? `${prize.order}º PRÊMIO` : `#${idx + 1}`}
+                    </span>
+                    <span
+                      className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-lg border ${
+                        isBlackout
+                          ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                          : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                      }`}
+                    >
+                      {isBlackout ? '🏆 Cartela Completa' : 'Linha'}
                     </span>
                     {isNext && (
                       <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-amber-400">

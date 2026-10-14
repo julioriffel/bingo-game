@@ -96,9 +96,13 @@ Para garantir justiça e clareza visual:
 
 ---
 
-## 5. Janela de Contestação (10 Segundos) & Showdown de Desempate
+## 5. Janela de Contestação Variável & Showdown de Desempate
 
 Quando um jogador canta Bingo, pode acontecer de outro jogador ter completado sua linha com a mesma pedra simultaneamente. O Bingo Royale possui um protocolo de contestação e desempate automático para garantir que apenas **um** jogador receba cada prêmio individual:
+
+- **Janela de Contestação Variável (Selecionável pelo Manager):** Na criação da sala, o Manager escolhe a duração da janela: **10s** (padrão/recomendado), **30s** ou **60s**.
+- **Locução Dinâmica:** O sistema sintetiza a narração por voz (TTS) informando exatamente a duração da janela configurada (ex: *"Atenção! Bingo cantado! Janela de contestação de 30 segundos aberta!"*).
+- **Sorteio Automático (Tempos Base):** Os intervalos base de sorteio por pedra são configuráveis e ajustáveis na mesa entre **5s** (padrão), **15s** e **30s**.
 
 ```mermaid
 sequenceDiagram
@@ -111,14 +115,14 @@ sequenceDiagram
     Jogador1->>Servidor: call_bingo(card_id)
     Servidor->>Servidor: Validação estrita (Timing + Hash)
     Servidor->>Telao: broadcast(game_paused)
-    Servidor->>Telao: broadcast(bingo_countdown_started, 10s)
-    Note over Servidor,Telao: Inicia contagem regressiva de 10 segundos
+    Servidor->>Telao: broadcast(bingo_countdown_started, N segundos)
+    Note over Servidor,Telao: Inicia contagem regressiva configurada (10s, 30s ou 60s)
     
-    Jogador2->>Servidor: call_bingo(card_id) [aos 4s]
+    Jogador2->>Servidor: call_bingo(card_id) [dentro do tempo limite]
     Servidor->>Servidor: Valida batida válida na mesma pedra
     Servidor->>Telao: broadcast(bingo_candidate_joined, Total: 2)
 
-    Note over Servidor: Fim dos 10 segundos -> Empate detectado!
+    Note over Servidor: Fim do tempo da janela -> Empate detectado!
     Servidor->>Telao: broadcast(bingo_tiebreaker_started, 15s)
     
     Jogador1->>Servidor: pick_tiebreaker_stone()
@@ -134,7 +138,7 @@ sequenceDiagram
 ```
 
 ### 5.1 Regras do Showdown da Pedra Mais Alta:
-1. **Janela de 10 Segundos:** Aberta no momento em que o primeiro jogador canta bingo válido. Se a contagem terminar com apenas 1 candidato, o prêmio é concedido imediatamente.
+1. **Janela de Contestação:** Aberta no momento em que o primeiro jogador canta bingo válido. Se a contagem terminar com apenas 1 candidato, o prêmio é concedido imediatamente.
 2. **Empate:** Havendo 2 ou mais candidatos na mesma pedra, inicia-se o minigame de desempate.
 3. **Pedras Misteriosas Únicas:** O servidor gera um conjunto de pedras numeradas de 1 a 75 sem repetição. Cada jogador escolhe uma pedra misteriosa virada para baixo.
 4. **Sem Duplicidade de Pedras:** Dois jogadores nunca recebem a mesma pedra no sorteio de desempate.
@@ -143,14 +147,17 @@ sequenceDiagram
 
 ---
 
-## 6. Sistema Dinâmico de Prêmios
+## 6. Sistema Dinâmico de Prêmios & Regra Estrita do Último Prêmio
 
 - Cada sala permite cadastrar uma quantidade livre de prêmios por rodada (ex: "1º Prêmio: Cafeteira Elétrica", "2º Prêmio: Vale Compras R$ 200", "3º Prêmio: Pix R$ 500").
-- Os prêmios possuem ordenação sequencial (`order`), título e descrição opcional.
-- No Telão (`HostScreen`) e nos celulares (`PlayerView`), a lista de prêmios é exibida com tags de status:
-  - ⏳ **A Disputar:** Prêmio ativo esperando ganhador.
-  - 🏆 **Premiado:** Exibe o troféu, o título do prêmio e o nome do jogador vencedor em destaque dourado.
-- Os prêmios são distribuídos na ordem cadastrada conforme os bingos são confirmados. Se houver mais prêmios que etapas, a partida no Modo Linha continua até o último prêmio ser concedido.
+- Os prêmios possuem ordenação sequencial (`order`), título, descrição opcional e meta de vitória (`target_type`).
+- **Regra do Último Prêmio (Cartela Completa Obrigatória):**
+  - **Prêmios Preliminares ($1$ até $N-1$):** Disputados e conferidos na modalidade **Linha** (`GameStage.LINE`).
+  - **Último Prêmio (Prêmio $N$ ou Prêmio Único):** O backend comuta a partida para a fase **Cartela Completa** (`GameStage.BLACKOUT`). A validação rejeita sumariamente qualquer batida em linha: apenas cartelas com todos os 24 números preenchidos podem faturar o último prêmio.
+- **Identificação Visual:** No Telão (`HostScreen`), no radar e nos celulares (`PlayerView`), cada prêmio exibe expressamente seu distintivo:
+  - `[Linha]` para prêmios preliminares.
+  - `[🏆 Cartela Completa]` para o grande prêmio final.
+- Os prêmios são distribuídos na ordem cadastrada conforme os bingos são confirmados. Quando o último prêmio em Cartela Completa é concedido, a partida encerra formalmente com status `FINISHED`.
 
 ---
 

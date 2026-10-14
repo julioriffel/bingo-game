@@ -41,7 +41,7 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
   // Dynamic prizes list
   const [prizes, setPrizes] = useState<PrizeItem[]>([
     { title: '1º Prêmio: Linha', description: 'Para quem completar a 1ª linha' },
-    { title: '2º Prêmio: Cartela Cheia', description: 'Grande prêmio da rodada' },
+    { title: '2º Prêmio: Cartela Completa', description: 'Grande prêmio da rodada (Blackout)' },
   ]);
 
   if (!isOpen) return null;
@@ -70,17 +70,17 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
     if (type === 'none') {
       setPrizes([]);
     } else if (type === 'single') {
-      setPrizes([{ title: 'Grande Prêmio (Cartela Cheia)', description: '' }]);
+      setPrizes([{ title: 'Grande Prêmio (Cartela Completa)', description: 'Para quem preencher toda a cartela' }]);
     } else if (type === 'multistage') {
       setPrizes([
         { title: '1º Prêmio: Linha', description: 'Primeira quina/linha completada' },
-        { title: '2º Prêmio: Cartela Cheia', description: 'Bingo completo (Blackout)' },
+        { title: '2º Prêmio: Cartela Completa', description: 'Bingo completo (Blackout)' },
       ]);
     } else if (type === 'podium') {
       setPrizes([
-        { title: '1º Lugar (Ouro)', description: 'Primeiro vencedor' },
-        { title: '2º Lugar (Prata)', description: 'Segundo vencedor' },
-        { title: '3º Lugar (Bronze)', description: 'Terceiro vencedor' },
+        { title: '1º Lugar (Linha)', description: 'Primeiro vencedor de linha' },
+        { title: '2º Lugar (Linha)', description: 'Segundo vencedor de linha' },
+        { title: '3º Lugar (Cartela Completa)', description: 'Grande campeão da cartela cheia' },
       ]);
     }
   };
@@ -219,9 +219,20 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
                     className="p-2.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-2"
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-[11px] font-black font-mono text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded">
-                        #{idx + 1}
-                      </span>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span className="text-[11px] font-black font-mono text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded">
+                          #{idx + 1}
+                        </span>
+                        <span
+                          className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded border ${
+                            idx === prizes.length - 1
+                              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                              : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                          }`}
+                        >
+                          {idx === prizes.length - 1 ? '🏆 Cartela Completa' : 'Linha'}
+                        </span>
+                      </div>
                       <input
                         type="text"
                         required
@@ -338,7 +349,7 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
                   <span className="font-bold text-sky-400">{drawInterval}s</span>
                 </div>
                 <div className="flex gap-2">
-                  {[3, 5, 7, 10].map((sec) => (
+                  {[5, 15, 30].map((sec) => (
                     <button
                       type="button"
                       key={sec}
@@ -349,7 +360,7 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
                           : 'border-slate-800 bg-slate-900 text-slate-400'
                       }`}
                     >
-                      {sec}s
+                      {sec}s {sec === 5 ? '★' : ''}
                     </button>
                   ))}
                 </div>
@@ -369,7 +380,7 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
               Tempo de espera após o 1º bingo para outros jogadores cantarem na mesma pedra e disputarem na pedra mais alta.
             </p>
             <div className="flex gap-2 pt-1">
-              {[5, 10, 15, 20].map((sec) => (
+              {[10, 30, 60].map((sec) => (
                 <button
                   type="button"
                   key={sec}

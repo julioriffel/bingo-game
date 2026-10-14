@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import type { BingoCard as BingoCardType, GameState } from '../../types/bingo';
 import { BingoCard } from './BingoCard';
 import { GameLogModal } from '../common/GameLogModal';
-import { Sparkles, Eye, Trophy, Bell, Gift, Crown, ScrollText, Users, ShieldAlert } from 'lucide-react';
+import { Sparkles, Eye, Trophy, Bell, Gift, Crown, ScrollText, Users, ShieldAlert, Volume2, VolumeX } from 'lucide-react';
 
 interface PlayerViewProps {
   cards: BingoCardType[];
@@ -14,6 +14,8 @@ interface PlayerViewProps {
   onOpenUsers?: () => void;
   userCount?: number;
   managerInactive?: boolean;
+  soundEnabled?: boolean;
+  onToggleSound?: () => void;
 }
 
 export const PlayerView: React.FC<PlayerViewProps> = ({
@@ -26,6 +28,8 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
   onOpenUsers,
   userCount,
   managerInactive,
+  soundEnabled = true,
+  onToggleSound,
 }) => {
   const [activeCardIndex, setActiveCardIndex] = useState(0);
   const [assistMode, setAssistMode] = useState(true);
@@ -100,6 +104,29 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
             <Eye className="w-4 h-4" />
             <span className="text-[9px] font-bold mt-0.5">Assistente</span>
           </button>
+
+          {onToggleSound && (
+            <button
+              type="button"
+              onClick={onToggleSound}
+              className={`p-2 sm:p-2.5 rounded-xl border flex flex-col items-center justify-center transition-all cursor-pointer touch-manipulation active:scale-95 shadow-sm ${
+                soundEnabled
+                  ? 'bg-amber-500/10 border-amber-500/30 text-amber-400'
+                  : 'bg-rose-500/15 border-rose-500/40 text-rose-400'
+              }`}
+              title={soundEnabled ? "Silenciar sons e locutor" : "Ativar som e locutor"}
+              aria-label={soundEnabled ? "Silenciar jogo" : "Ativar som"}
+            >
+              {soundEnabled ? (
+                <Volume2 className="w-4 h-4 text-amber-400" />
+              ) : (
+                <VolumeX className="w-4 h-4 text-rose-400" />
+              )}
+              <span className="text-[9px] font-bold mt-0.5">
+                {soundEnabled ? 'Som' : 'Mudo'}
+              </span>
+            </button>
+          )}
 
           {onOpenUsers && (
             <button

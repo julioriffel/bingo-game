@@ -1,27 +1,47 @@
 import { useCallback, useRef, useEffect } from 'react';
 
-export function useSpeech() {
-  const isEnabledRef = useRef<boolean>(true);
+export function useSpeech(initialEnabled: boolean = true) {
+  const isEnabledRef = useRef<boolean>(initialEnabled);
   const voiceRef = useRef<SpeechSynthesisVoice | null>(null);
+
+  useEffect(() => {
+    isEnabledRef.current = initialEnabled;
+    if (!initialEnabled && 'speechSynthesis' in window) {
+      try {
+        window.speechSynthesis.cancel();
+      } catch {}
+    }
+  }, [initialEnabled]);
 
   useEffect(() => {
     if (!('speechSynthesis' in window)) return;
 
     const loadVoices = () => {
-      const voices = window.speechSynthesis.getVoices();
-      // Look for Portuguese voice
-      const ptVoice = voices.find(v => v.lang.startsWith('pt')) || voices[0];
-      if (ptVoice) {
-        voiceRef.current = ptVoice;
-      }
+      try {
+        const voices = window.speechSynthesis.getVoices();
+        // Look for Portuguese voice
+        const ptVoice = voices.find(v => v.lang.startsWith('pt')) || voices[0];
+        if (ptVoice) {
+          voiceRef.current = ptVoice;
+        }
+      } catch {}
     };
 
     loadVoices();
     window.speechSynthesis.onvoiceschanged = loadVoices;
   }, []);
 
+  const cancelSpeech = useCallback(() => {
+    if ('speechSynthesis' in window) {
+      try {
+        window.speechSynthesis.cancel();
+      } catch {}
+    }
+  }, []);
+
   const speakText = useCallback((text: string) => {
-    if (!('speechSynthesis' in window) || !isEnabledRef.current) return;
+    if (!isEnabledRef.current) return;
+    if (!('speechSynthesis' in window)) return;
     try {
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
@@ -41,7 +61,12 @@ export function useSpeech() {
 
   const toggleSpeech = useCallback((enabled: boolean) => {
     isEnabledRef.current = enabled;
+    if (!enabled && 'speechSynthesis' in window) {
+      try {
+        window.speechSynthesis.cancel();
+      } catch {}
+    }
   }, []);
 
-  return { speakText, speakBall, toggleSpeech };
+  return { speakText, speakBall, toggleSpeech, cancelSpeech };
 }

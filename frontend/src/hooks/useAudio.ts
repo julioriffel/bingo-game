@@ -1,7 +1,16 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useRef, useEffect } from 'react';
 
-export function useAudio() {
+export function useAudio(soundEnabled: boolean = true) {
+  const isEnabledRef = useRef<boolean>(soundEnabled);
   const audioCtxRef = useRef<AudioContext | null>(null);
+
+  useEffect(() => {
+    isEnabledRef.current = soundEnabled;
+  }, [soundEnabled]);
+
+  const setSoundEnabled = useCallback((enabled: boolean) => {
+    isEnabledRef.current = enabled;
+  }, []);
 
   const getAudioContext = useCallback(() => {
     if (!audioCtxRef.current) {
@@ -16,6 +25,7 @@ export function useAudio() {
 
   // 1. Stamp / Click Sound
   const playStamp = useCallback(() => {
+    if (!isEnabledRef.current) return;
     try {
       const ctx = getAudioContext();
       const osc = ctx.createOscillator();
@@ -34,7 +44,7 @@ export function useAudio() {
       osc.start();
       osc.stop(ctx.currentTime + 0.08);
 
-      // Haptic feedback if supported
+      // Haptic feedback if supported and sound is enabled
       if ('vibrate' in navigator) {
         navigator.vibrate(15);
       }
@@ -45,6 +55,7 @@ export function useAudio() {
 
   // 2. Ball Drop Sound
   const playBallDrop = useCallback(() => {
+    if (!isEnabledRef.current) return;
     try {
       const ctx = getAudioContext();
       const osc = ctx.createOscillator();
@@ -67,6 +78,7 @@ export function useAudio() {
 
   // 3. Victory Fanfare
   const playVictory = useCallback(() => {
+    if (!isEnabledRef.current) return;
     try {
       const ctx = getAudioContext();
       const notes = [523.25, 659.25, 783.99, 1046.5]; // C5, E5, G5, C6
@@ -95,6 +107,7 @@ export function useAudio() {
 
   // 4. Subtle Thud Error
   const playError = useCallback(() => {
+    if (!isEnabledRef.current) return;
     try {
       const ctx = getAudioContext();
       const osc = ctx.createOscillator();
@@ -115,5 +128,5 @@ export function useAudio() {
     } catch {}
   }, [getAudioContext]);
 
-  return { playStamp, playBallDrop, playVictory, playError };
+  return { playStamp, playBallDrop, playVictory, playError, setSoundEnabled };
 }

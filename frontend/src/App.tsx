@@ -49,8 +49,37 @@ export function App() {
   const [isCreateOpen, setIsCreateOpen] = useState<boolean>(false);
   const [joinModalCode, setJoinModalCode] = useState<string | null>(null);
   const [statusBanner, setStatusBanner] = useState<string | null>(null);
-  const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
-  const [voiceEnabled, setVoiceEnabled] = useState<boolean>(true);
+  // Sound & Speech preferences with localStorage persistence (Android & Web)
+  const [soundEnabled, setSoundEnabled] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('bingo_sound_enabled');
+      return saved !== null ? JSON.parse(saved) : true;
+    } catch {
+      return true;
+    }
+  });
+
+  const [voiceEnabled, setVoiceEnabled] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('bingo_voice_enabled');
+      return saved !== null ? JSON.parse(saved) : true;
+    } catch {
+      return true;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('bingo_sound_enabled', JSON.stringify(soundEnabled));
+    } catch {}
+  }, [soundEnabled]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('bingo_voice_enabled', JSON.stringify(voiceEnabled));
+    } catch {}
+  }, [voiceEnabled]);
+
   const [isHelpOpen, setIsHelpOpen] = useState<boolean>(false);
   const [helpDefaultTab, setHelpDefaultTab] = useState<'rules' | 'player' | 'manager'>('rules');
 
@@ -78,9 +107,23 @@ export function App() {
     };
   }, []);
 
-  // Hooks
-  const { playStamp, playBallDrop, playVictory, playError } = useAudio();
-  const { speakBall, speakText, toggleSpeech } = useSpeech();
+  // Audio & Speech hooks with strict enabled sync
+  const { playStamp, playBallDrop, playVictory, playError, setSoundEnabled: setAudioContextEnabled } = useAudio(soundEnabled);
+  const { speakBall, speakText, toggleSpeech, cancelSpeech } = useSpeech(soundEnabled && voiceEnabled);
+
+  // Master Sound Toggle: mutes/unmutes both procedural audio effects AND locutor voice
+  const handleToggleSound = useCallback(() => {
+    const isCurrentlyActive = soundEnabled || voiceEnabled;
+    const nextState = !isCurrentlyActive;
+
+    setSoundEnabled(nextState);
+    setVoiceEnabled(nextState);
+    setAudioContextEnabled(nextState);
+    toggleSpeech(nextState);
+    if (!nextState) {
+      cancelSpeech();
+    }
+  }, [soundEnabled, voiceEnabled, setAudioContextEnabled, toggleSpeech, cancelSpeech]);
 
   // Load public rooms for Radar
   const fetchRooms = useCallback(async () => {
@@ -165,7 +208,7 @@ export function App() {
               setIsHost(true);
               setCurrentView('host');
               setStatusBanner('Você assumiu a gerência da sala!');
-              if (voiceEnabled) speakText('Você assumiu a gerência da sala!');
+              if (soundEnabled && voiceEnabled) speakText('Você assumiu a gerência da sala!');
             } else {
               if (isHost) {
                 setIsHost(false);
@@ -193,7 +236,7 @@ export function App() {
             game_log: payload?.game_log || [],
           }));
           setStatusBanner('A partida começou! Boa sorte!');
-          if (voiceEnabled) speakText('A partida começou! Boa sorte a todos!');
+          if (soundEnabled && voiceEnabled) speakText('A partida começou! Boa sorte a todos!');
           break;
 
         case 'ball_drawn':
@@ -207,7 +250,7 @@ export function App() {
               game_log: payload.log_entry ? [...prev.game_log, payload.log_entry] : prev.game_log,
             }));
             if (soundEnabled) playBallDrop();
-            if (voiceEnabled) speakBall(ball, letter);
+            if (soundEnabled && voiceEnabled) speakBall(ball, letter);
           }
           break;
 
@@ -244,7 +287,7 @@ export function App() {
               },
             }));
             setStatusBanner(payload.message || 'Bingo cantado! Janela de validação aberta.');
-            if (voiceEnabled) speakText('Atenção! Bingo cantado! Janela de dez segundos aberta!');
+            if (soundEnabled && voiceEnabled) speakText('Atenção! Bingo cantado! Janela de dez segundos aberta!');
           }
           break;
 
@@ -261,7 +304,7 @@ export function App() {
               };
             });
             setStatusBanner(payload.message || 'Mais um jogador entrou na disputa do Bingo!');
-            if (voiceEnabled && payload.new_candidate) {
+            if (soundEnabled && voiceEnabled && payload.new_candidate) {
               speakText(`${payload.new_candidate.player_name} também cantou bingo!`);
             }
           }
@@ -289,7 +332,7 @@ export function App() {
               };
             });
             setStatusBanner(payload.message || '⚔️ Empate no Bingo! Disputa da pedra mais alta iniciada!');
-            if (voiceEnabled) speakText('Atenção! Empate no Bingo! Disputa da pedra mais alta!');
+            if (soundEnabled && voiceEnabled) speakText('Atenção! Empate no Bingo! Disputa da pedra mais alta!');
           }
           break;
 
@@ -326,7 +369,7 @@ export function App() {
               };
             });
             setStatusBanner(payload.message || `🏆 ${payload.winner_player_name} venceu a disputa!`);
-            if (voiceEnabled) speakText(`Vitória de ${payload.winner_player_name} com a pedra maior!`);
+            if (soundEnabled && voiceEnabled) speakText(`Vitória de ${payload.winner_player_name} com a pedra maior!`);
           }
           break;
 
@@ -383,7 +426,7 @@ export function App() {
             const message = payload.message || defaultMsg;
             setStatusBanner(message);
 
-            if (voiceEnabled) {
+            if (soundEnabled && voiceEnabled) {
               const voiceAnnouncement = awardedPrize
                 ? `Atenção! BINGO confirmado! Parabéns ${winner?.player_name}, que ganhou ${awardedPrize.title}!`
                 : `Atenção! BINGO confirmado! Parabéns ${winner?.player_name}!`;
@@ -451,7 +494,7 @@ export function App() {
       setCurrentView('host');
       setIsUsersOpen(false);
       setStatusBanner('Você assumiu a gerência da sala!');
-      if (voiceEnabled) speakText('Você assumiu a gerência da sala!');
+      if (soundEnabled && voiceEnabled) speakText('Você assumiu a gerência da sala!');
       if (soundEnabled) playVictory();
     } catch (err: any) {
       alert(err.message || 'Erro ao assumir gerência');
@@ -640,7 +683,7 @@ export function App() {
         roomCode={roomCode || undefined}
         isConnected={currentView === 'lobby' ? true : isConnected}
         soundEnabled={soundEnabled}
-        onToggleSound={() => setSoundEnabled(!soundEnabled)}
+        onToggleSound={handleToggleSound}
         onBackToLobby={currentView !== 'lobby' ? handleBackToLobby : undefined}
         onOpenHostView={isHost && currentView === 'game' ? () => setCurrentView('host') : undefined}
         isHost={isHost}
@@ -675,6 +718,8 @@ export function App() {
             userCount={gameState.player_count ?? players.filter((p) => !p.is_host).length}
             onOpenUsers={() => setIsUsersOpen(true)}
             managerInactive={gameState.manager_inactive || (gameState.manager_last_active_at ? (Date.now() / 1000 - gameState.manager_last_active_at >= 120) : false)}
+            soundEnabled={soundEnabled}
+            onToggleSound={handleToggleSound}
           />
         )}
 
@@ -693,7 +738,10 @@ export function App() {
             onToggleVoice={() => {
               const nextVal = !voiceEnabled;
               setVoiceEnabled(nextVal);
-              toggleSpeech(nextVal);
+              toggleSpeech(soundEnabled && nextVal);
+              if (!nextVal) {
+                cancelSpeech();
+              }
             }}
             onBackToPlayerView={cards.length > 0 ? () => setCurrentView('game') : undefined}
             onAddPrize={handleAddPrize}

@@ -18,6 +18,10 @@ class Settings(BaseSettings):
         "http://bingo.bolsadedados.com.br",
         "https://bolsadedados.com.br",
     ]
+    ALLOWED_ORIGIN_REGEX: str = os.getenv(
+        "ALLOWED_ORIGIN_REGEX",
+        r"^https?://([a-zA-Z0-9-]+\.)*bolsadedados\.com\.br(:\d+)?$|^https?://localhost(:\d+)?$|^https?://127\.0\.0\.1(:\d+)?$|^null$"
+    )
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

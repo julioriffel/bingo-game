@@ -4,6 +4,7 @@ import { X, Trophy, Layers, Clock, Globe, Lock, Gift, Plus, Trash2, Timer } from
 interface PrizeItem {
   title: string;
   description: string;
+  target_type?: 'line' | 'blackout';
 }
 
 interface CreateRoomModalProps {
@@ -19,7 +20,19 @@ interface CreateRoomModalProps {
     draw_mode: 'auto' | 'manual';
     contest_window_seconds?: number;
     prizes: PrizeItem[];
+    previous_room_code?: string;
   }) => Promise<void>;
+  initialConfig?: {
+    name?: string;
+    win_condition?: 'line' | 'blackout' | 'multi_stage';
+    max_cards_per_player?: number;
+    is_public?: boolean;
+    draw_interval?: number;
+    draw_mode?: 'auto' | 'manual';
+    contest_window_seconds?: number;
+    prizes?: PrizeItem[];
+    previous_room_code?: string;
+  } | null;
   isLoading?: boolean;
 }
 
@@ -27,6 +40,7 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
   isOpen,
   onClose,
   onCreate,
+  initialConfig,
   isLoading = false,
 }) => {
   const [hostName, setHostName] = useState(() => {
@@ -46,9 +60,25 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
 
   // Dynamic prizes list
   const [prizes, setPrizes] = useState<PrizeItem[]>([
-    { title: '1º Prêmio: Linha', description: 'Para quem completar a 1ª linha' },
-    { title: '2º Prêmio: Cartela Completa', description: 'Grande prêmio da rodada (Blackout)' },
+    { title: '1º Prêmio: Linha', description: 'Para quem completar a 1ª linha', target_type: 'line' },
+    { title: '2º Prêmio: Cartela Completa', description: 'Grande prêmio da rodada (Blackout)', target_type: 'blackout' },
   ]);
+
+  // Sync initialConfig if provided
+  useEffect(() => {
+    if (isOpen && initialConfig) {
+      if (initialConfig.name) setRoomName(initialConfig.name);
+      if (initialConfig.win_condition) setWinCondition(initialConfig.win_condition);
+      if (initialConfig.max_cards_per_player) setMaxCards(initialConfig.max_cards_per_player);
+      if (initialConfig.is_public !== undefined) setIsPublic(initialConfig.is_public);
+      if (initialConfig.draw_interval) setDrawInterval(initialConfig.draw_interval);
+      if (initialConfig.draw_mode) setDrawMode(initialConfig.draw_mode);
+      if (initialConfig.contest_window_seconds) setContestWindow(initialConfig.contest_window_seconds);
+      if (initialConfig.prizes && initialConfig.prizes.length > 0) {
+        setPrizes(initialConfig.prizes);
+      }
+    }
+  }, [isOpen, initialConfig]);
 
   // Handle ESC key to dismiss modal
   useEffect(() => {
@@ -64,14 +94,18 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
 
   const handleAddPrize = () => {
     const nextOrder = prizes.length + 1;
-    setPrizes([...prizes, { title: `${nextOrder}º Prêmio`, description: '' }]);
+    setPrizes([...prizes, { title: `${nextOrder}º Prêmio`, description: '', target_type: 'line' }]);
   };
 
   const handleRemovePrize = (index: number) => {
     setPrizes(prizes.filter((_, idx) => idx !== index));
   };
 
-  const handlePrizeChange = (index: number, field: 'title' | 'description', value: string) => {
+  const handlePrizeChange = (
+    index: number,
+    field: 'title' | 'description' | 'target_type',
+    value: string
+  ) => {
     setPrizes(
       prizes.map((p, idx) => {
         if (idx === index) {
@@ -86,17 +120,17 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
     if (type === 'none') {
       setPrizes([]);
     } else if (type === 'single') {
-      setPrizes([{ title: 'Grande Prêmio (Cartela Completa)', description: 'Para quem preencher toda a cartela' }]);
+      setPrizes([{ title: 'Grande Prêmio (Cartela Completa)', description: 'Para quem preencher toda a cartela', target_type: 'blackout' }]);
     } else if (type === 'multistage') {
       setPrizes([
-        { title: '1º Prêmio: Linha', description: 'Primeira quina/linha completada' },
-        { title: '2º Prêmio: Cartela Completa', description: 'Bingo completo (Blackout)' },
+        { title: '1º Prêmio: Linha', description: 'Primeira quina/linha completada', target_type: 'line' },
+        { title: '2º Prêmio: Cartela Completa', description: 'Bingo completo (Blackout)', target_type: 'blackout' },
       ]);
     } else if (type === 'podium') {
       setPrizes([
-        { title: '1º Lugar (Linha)', description: 'Primeiro vencedor de linha' },
-        { title: '2º Lugar (Linha)', description: 'Segundo vencedor de linha' },
-        { title: '3º Lugar (Cartela Completa)', description: 'Grande campeão da cartela cheia' },
+        { title: '1º Lugar (Linha)', description: 'Primeiro vencedor de linha', target_type: 'line' },
+        { title: '2º Lugar (Linha)', description: 'Segundo vencedor de linha', target_type: 'line' },
+        { title: '3º Lugar (Cartela Completa)', description: 'Grande campeão da cartela cheia', target_type: 'blackout' },
       ]);
     }
   };
@@ -112,7 +146,11 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
 
     // Filter out prizes with empty titles
     const validPrizes = prizes
-      .map((p) => ({ title: p.title.trim(), description: p.description.trim() }))
+      .map((p, idx) => ({
+        title: p.title.trim(),
+        description: p.description.trim(),
+        target_type: p.target_type || (idx === prizes.length - 1 ? 'blackout' : 'line'),
+      }))
       .filter((p) => p.title.length > 0);
 
     await onCreate({
@@ -125,6 +163,7 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
       draw_mode: drawMode,
       contest_window_seconds: contestWindow,
       prizes: validPrizes,
+      previous_room_code: initialConfig?.previous_room_code,
     });
   };
 
@@ -255,15 +294,27 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
                         <span className="text-[11px] font-black font-mono text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-lg border border-amber-500/20">
                           #{idx + 1}
                         </span>
-                        <span
-                          className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border ${
-                            idx === prizes.length - 1
-                              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                              : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handlePrizeChange(
+                              idx,
+                              'target_type',
+                              p.target_type === 'blackout' ? 'line' : 'blackout'
+                            )
+                          }
+                          title="Clique para alternar entre Linha e Cartela Cheia"
+                          aria-label={`Alternar modalidade do prêmio ${idx + 1}: atualmente ${
+                            p.target_type === 'blackout' ? 'Cartela Cheia' : 'Linha'
+                          }`}
+                          className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border transition-all cursor-pointer active:scale-95 flex items-center gap-1 ${
+                            p.target_type === 'blackout'
+                              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/30'
+                              : 'bg-amber-500/20 text-amber-300 border-amber-500/40 hover:bg-amber-500/30'
                           }`}
                         >
-                          {idx === prizes.length - 1 ? '🏆 Cartela Cheia' : 'Linha'}
-                        </span>
+                          {p.target_type === 'blackout' ? '🏆 Cartela Cheia' : 'Linha'}
+                        </button>
                       </div>
                       <input
                         type="text"

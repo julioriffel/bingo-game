@@ -126,7 +126,9 @@ export interface PublicRoom {
 
 export interface GameState {
   code: string;
+  name?: string;
   status: 'lobby' | 'playing' | 'paused' | 'finished';
+  win_condition?: 'line' | 'blackout' | 'multi_stage';
   stage: 'waiting' | 'line' | 'blackout' | 'completed';
   drawn_balls: number[];
   last_drawn_ball: number | null;

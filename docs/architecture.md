@@ -36,11 +36,12 @@ O sistema adota uma arquitetura **monolítica moderna e desacoplada em container
 │   └──────────────────────────────────┘        │  • BingoEngine (HMAC / Verificação)      │   │
 │                                               └────────────────────┬─────────────────────┘   │
 └────────────────────────────────────────────────────────────────────┼─────────────────────────┘
-                                                                     │ (Opcional)
                                                                      ▼
                                                         ┌─────────────────────────┐
-                                                        │     Redis 7 (Pub/Sub)   │
-                                                        │   (Multi-instância sync)│
+                                                        │     Redis 7             │
+                                                        │ • Pub/Sub Broadcast     │
+                                                        │ • Persistência Cartelas │
+                                                        │ • Sobrevivência Reload  │
                                                         └─────────────────────────┘
 ```
 
@@ -145,7 +146,15 @@ backend/
   - 5 colunas estritas: B (1..15), I (16..30), N (31..45 com centro zero), G (46..60), O (61..75).
 - **Assinatura Digital HMAC-SHA256:**
   - Cada cartela gerada recebe um hash HMAC calculado com a chave secreta do servidor (`SECRET_KEY`) baseando-se nos 24 números e no ID da cartela.
-  - É impossível para o cliente adulterar números na memória do navegador: a validação de bingo no servidor recalcula a conformidade do hash e confere as pedras sorteadas contra o histórico imutável `room.drawn_balls`.
+### 3.4 Persistência e Tolerância ao Reload do Navegador (`RedisService`)
+
+- **Persistência Imediata de Salas e Cartelas:**
+  - O estado completo da sala (`Room`), jogadores (`Player`) e cartelas (`BingoCard`), incluindo números marcados (`marked`), prêmios e histórico de pedras sorteadas, é persistido de forma assíncrona no Redis (`bingo:room:{code}`).
+  - Índices dedicados para cartelas (`bingo:cards:{code}:{player_id}`) e sessões (`bingo:token:{token}`) com TTL de 24 horas (`86400s`).
+- **Recuperação Automática no Reload do Browser:**
+  - Ao recarregar a página (F5), fechar e reabrir abas, ou após reinício do processo do backend, o endpoint `POST /api/rooms/{code}/join` e o handshake WebSocket `join` restauram as cartelas e o estado da partida diretamente do Redis.
+  - O evento WebSocket `room_state` devolve as cartelas atualizadas (`payload.cards`) ao jogador no momento do handshake, sincronizando números marcados instantaneamente.
+  - Fallback gracioso automático para operação puramente *in-memory* caso o servidor Redis fique indisponível.
 
 ---
 

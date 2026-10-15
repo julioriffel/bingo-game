@@ -3,6 +3,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from typing import Optional, List
 from ..services.room_service import room_service
+from ..services.connection_manager import connection_manager
 from ..models.room import WinCondition, DrawMode
 
 logger = logging.getLogger(__name__)
@@ -11,6 +12,7 @@ router = APIRouter(prefix="/api/rooms", tags=["rooms"])
 class PrizeInput(BaseModel):
     title: str
     description: str = ""
+    target_type: Optional[str] = Field(default=None, pattern="^(line|blackout)$")
 
 class CreateRoomRequest(BaseModel):
     host_name: str
@@ -22,6 +24,17 @@ class CreateRoomRequest(BaseModel):
     draw_mode: DrawMode = DrawMode.AUTO
     contest_window_seconds: float = Field(default=10.0, ge=0.0, le=120.0)
     prizes: list[PrizeInput] = Field(default_factory=list)
+    previous_room_code: Optional[str] = None
+
+class StartNewGameRequest(BaseModel):
+    host_id: str
+    name: Optional[str] = None
+    win_condition: Optional[WinCondition] = None
+    max_cards_per_player: Optional[int] = None
+    draw_interval: Optional[float] = None
+    draw_mode: Optional[DrawMode] = None
+    contest_window_seconds: Optional[float] = None
+    prizes: Optional[list[PrizeInput]] = None
 
 class JoinRoomRequest(BaseModel):
     player_name: str
@@ -33,14 +46,21 @@ class AddPrizeRequest(BaseModel):
     host_id: str
     title: str
     description: str = ""
+    target_type: str = Field(default="line", pattern="^(line|blackout)$")
+
+class UpdatePrizeRequest(BaseModel):
+    host_id: str
+    title: Optional[str] = None
+    description: Optional[str] = None
+    target_type: Optional[str] = Field(default=None, pattern="^(line|blackout)$")
 
 @router.get("")
-def list_public_rooms():
-    return {"rooms": room_service.get_public_rooms()}
+async def list_public_rooms():
+    return {"rooms": await room_service.get_public_rooms_async()}
 
 @router.get("/{room_code}")
-def get_room(room_code: str):
-    room = room_service.get_room(room_code.upper())
+async def get_room(room_code: str):
+    room = await room_service.get_room_async(room_code.upper())
     if not room:
         raise HTTPException(status_code=404, detail="Sala não encontrada")
     return {
@@ -67,8 +87,8 @@ def get_room(room_code: str):
     }
 
 @router.get("/{room_code}/users")
-def get_room_users(room_code: str):
-    room = room_service.get_room(room_code.upper())
+async def get_room_users(room_code: str):
+    room = await room_service.get_room_async(room_code.upper())
     if not room:
         raise HTTPException(status_code=404, detail="Sala não encontrada")
     return {
@@ -105,8 +125,8 @@ async def claim_manager_endpoint(room_code: str, req: ClaimManagerRequest):
         raise HTTPException(status_code=500, detail="Erro interno ao assumir gerenciamento da sala")
 
 @router.get("/{room_code}/log")
-def get_room_log(room_code: str):
-    room = room_service.get_room(room_code.upper())
+async def get_room_log(room_code: str):
+    room = await room_service.get_room_async(room_code.upper())
     if not room:
         raise HTTPException(status_code=404, detail="Sala não encontrada")
     return {
@@ -117,7 +137,7 @@ def get_room_log(room_code: str):
     }
 
 @router.post("")
-def create_room(req: CreateRoomRequest):
+async def create_room(req: CreateRoomRequest):
     try:
         room, host_player = room_service.create_room(
             host_name=req.host_name.strip() or "Host",
@@ -130,6 +150,21 @@ def create_room(req: CreateRoomRequest):
             prizes=[p.model_dump() for p in req.prizes],
             contest_window_seconds=req.contest_window_seconds,
         )
+
+        # If created as continuation of a previous match, redirect previous room's players
+        if req.previous_room_code:
+            old_code = req.previous_room_code.strip().upper()
+            await connection_manager.broadcast_to_room(old_code, {
+                "type": "new_game_redirect",
+                "payload": {
+                    "new_room_code": room.code,
+                    "room_name": room.name,
+                    "pin": room.pin,
+                    "host_name": room.host_name,
+                    "message": f"O Anfitrião iniciou uma nova partida na sala {room.code}!",
+                }
+            })
+
         return {
             "room_code": room.code,
             "pin": room.pin,
@@ -142,10 +177,45 @@ def create_room(req: CreateRoomRequest):
         logger.exception("Erro inesperado ao criar sala")
         raise HTTPException(status_code=500, detail="Erro interno ao criar sala")
 
-@router.post("/{room_code}/join")
-def join_room(room_code: str, req: JoinRoomRequest):
+@router.post("/{room_code}/new-game")
+async def start_new_game(room_code: str, req: StartNewGameRequest):
     code = room_code.upper()
-    room = room_service.get_room(code)
+    try:
+        prizes_data = [p.model_dump() for p in req.prizes] if req.prizes is not None else None
+        new_room, new_host = await room_service.create_next_game(
+            old_room_code=code,
+            host_id=req.host_id,
+            name=req.name.strip() if req.name else None,
+            prizes=prizes_data,
+            win_condition=req.win_condition,
+            max_cards_per_player=req.max_cards_per_player,
+            draw_interval=req.draw_interval,
+            draw_mode=req.draw_mode,
+            contest_window_seconds=req.contest_window_seconds,
+        )
+        return {
+            "success": True,
+            "room_code": new_room.code,
+            "pin": new_room.pin,
+            "host_id": new_host.id,
+            "token": new_host.token,
+            "prizes": [p.model_dump() for p in new_room.prizes],
+            "draw_interval": new_room.draw_interval,
+            "draw_mode": new_room.draw_mode.value,
+            "win_condition": new_room.win_condition.value,
+        }
+    except ValueError as err:
+        raise HTTPException(status_code=400, detail=str(err))
+    except PermissionError as err:
+        raise HTTPException(status_code=403, detail=str(err))
+    except Exception as err:
+        logger.exception("Erro ao iniciar nova partida da sala %s", code)
+        raise HTTPException(status_code=500, detail="Erro interno ao iniciar nova partida")
+
+@router.post("/{room_code}/join")
+async def join_room(room_code: str, req: JoinRoomRequest):
+    code = room_code.upper()
+    room = await room_service.get_room_async(code)
     if not room:
         raise HTTPException(status_code=404, detail="Sala não encontrada")
 
@@ -155,7 +225,7 @@ def join_room(room_code: str, req: JoinRoomRequest):
             raise HTTPException(status_code=403, detail="Esta sala é privada. PIN de acesso obrigatório e incorreto.")
 
     try:
-        room, player = room_service.join_room(
+        room, player = await room_service.join_room_async(
             room_code=code,
             player_name=req.player_name.strip() or "Jogador",
             card_count=req.card_count,
@@ -179,11 +249,28 @@ def join_room(room_code: str, req: JoinRoomRequest):
         logger.exception("Erro inesperado ao ingressar na sala", extra={"room_code": code})
         raise HTTPException(status_code=500, detail="Erro interno ao ingressar na sala")
 
+@router.get("/{room_code}/players/{player_id}/cards")
+async def get_player_cards(room_code: str, player_id: str, token: Optional[str] = None):
+    code = room_code.upper()
+    room = await room_service.get_room_async(code)
+    if not room:
+        raise HTTPException(status_code=404, detail="Sala não encontrada")
+    player = room.players.get(player_id)
+    if not player:
+        raise HTTPException(status_code=404, detail="Jogador não encontrado")
+    if token and player.token != token:
+        raise HTTPException(status_code=403, detail="Token inválido para esta cartela")
+    return {
+        "room_code": room.code,
+        "player_id": player.id,
+        "cards": [c.model_dump() for c in player.cards],
+    }
+
 @router.post("/{room_code}/prizes")
 async def add_prize(room_code: str, req: AddPrizeRequest):
     code = room_code.upper()
     try:
-        prize = await room_service.add_prize(code, req.host_id, req.title, req.description)
+        prize = await room_service.add_prize(code, req.host_id, req.title, req.description, req.target_type)
         return {"success": True, "prize": prize.model_dump()}
     except ValueError as err:
         raise HTTPException(status_code=400, detail=str(err))
@@ -192,6 +279,22 @@ async def add_prize(room_code: str, req: AddPrizeRequest):
     except Exception as e:
         logger.exception("Erro ao adicionar prêmio", extra={"room_code": code})
         raise HTTPException(status_code=500, detail="Erro interno ao adicionar prêmio")
+
+@router.patch("/{room_code}/prizes/{prize_id}")
+async def update_prize_endpoint(room_code: str, prize_id: str, req: UpdatePrizeRequest):
+    code = room_code.upper()
+    try:
+        prize = await room_service.update_prize(
+            code, req.host_id, prize_id, req.title, req.description, req.target_type
+        )
+        return {"success": True, "prize": prize.model_dump()}
+    except ValueError as err:
+        raise HTTPException(status_code=400, detail=str(err))
+    except PermissionError as err:
+        raise HTTPException(status_code=403, detail=str(err))
+    except Exception as e:
+        logger.exception("Erro ao atualizar prêmio", extra={"room_code": code})
+        raise HTTPException(status_code=500, detail="Erro interno ao atualizar prêmio")
 
 @router.delete("/{room_code}/prizes/{prize_id}")
 async def delete_prize(room_code: str, prize_id: str, host_id: str):

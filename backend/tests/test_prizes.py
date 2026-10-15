@@ -2,7 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 from backend.main import app
 from backend.services.room_service import room_service
-from backend.models.room import WinCondition, DrawMode
+from backend.models.room import WinCondition, DrawMode, RoomStatus
 
 client = TestClient(app)
 
@@ -180,3 +180,78 @@ async def test_single_prize_room_starts_in_blackout():
     valid_full, win_type, _ = await room_service.call_bingo(code, p1.id, card.id)
     assert valid_full is True
     assert win_type == "Cartela Cheia"
+
+@pytest.mark.asyncio
+async def test_custom_prize_target_types_and_update():
+    # 1. Create room with Prize 1: Blackout, Prize 2: Line (inverted order)
+    room, host = room_service.create_room(
+        host_name="Host Custom",
+        win_condition=WinCondition.MULTI_STAGE,
+        prizes=[
+            {"title": "1º Prêmio Blackout", "target_type": "blackout"},
+            {"title": "2º Prêmio Linha", "target_type": "line"},
+        ]
+    )
+    code = room.code
+    assert room.prizes[0].target_type == "blackout"
+    assert room.prizes[1].target_type == "line"
+
+    _, p1 = room_service.join_room(code, "Player One", card_count=1)
+    await room_service.start_game(code, host.id)
+
+    # Room stage starts in blackout because first prize is blackout!
+    assert room.stage.value == "blackout"
+
+    # Host updates prize 1 target_type to line dynamically while playing
+    updated = await room_service.update_prize(
+        code, host.id, room.prizes[0].id, target_type="line"
+    )
+    assert updated.target_type == "line"
+    assert room.stage.value == "line"
+
+    # Host updates prize 1 target_type back to blackout
+    await room_service.update_prize(
+        code, host.id, room.prizes[0].id, target_type="blackout"
+    )
+    assert room.stage.value == "blackout"
+
+@pytest.mark.asyncio
+async def test_create_next_game_flow():
+    # 1. Create and finish a room
+    room, host = room_service.create_room(
+        host_name="Host Rodada",
+        win_condition=WinCondition.LINE,
+        prizes=[{"title": "Prêmio Único", "target_type": "line"}],
+    )
+    code = room.code
+    _, p1 = room_service.join_room(code, "Player One", card_count=1)
+    await room_service.start_game(code, host.id)
+
+    # Award the prize
+    card = p1.cards[0]
+    row_0 = [c.number for c in card.grid[0] if not c.is_free]
+    for n in row_0:
+        room.drawn_balls.append(n)
+        room.last_drawn_ball = n
+    valid, _, _ = await room_service.call_bingo(code, p1.id, card.id)
+    assert valid is True
+    await room_service.resolve_contest_window(code)
+
+    assert room.status == RoomStatus.FINISHED
+    assert room.prizes[0].winner_name == "Player One"
+
+    # 2. Unauthorized user cannot start new game
+    with pytest.raises(PermissionError):
+        await room_service.create_next_game(code, host_id=p1.id)
+
+    # 3. Host starts new game
+    new_room, new_host = await room_service.create_next_game(code, host_id=host.id)
+    assert new_room.code != code
+    assert new_room.status == RoomStatus.LOBBY
+    assert len(new_room.prizes) == 1
+    # Prize winner is reset for the new game!
+    assert new_room.prizes[0].winner_id is None
+    assert new_room.prizes[0].winner_name is None
+    assert new_room.prizes[0].title == "Prêmio Único"
+    assert new_room.prizes[0].target_type == "line"
+    assert new_host.is_host is True

@@ -12,6 +12,7 @@ from ..models.room import (
 from ..models.card import BingoCard
 from .bingo_engine import generate_card, check_card_victory, check_card_victory_detailed, get_ball_letter
 from .connection_manager import connection_manager
+from .redis_service import redis_service
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +22,26 @@ class RoomService:
         self.draw_tasks: Dict[str, asyncio.Task] = {}
         self.contest_tasks: Dict[str, asyncio.Task] = {}
         self.background_tasks: set[asyncio.Task] = set()
+
+    def _persist_room(self, room: Room):
+        """Asynchronously triggers persistence of a room to Redis."""
+        try:
+            loop = asyncio.get_running_loop()
+            if loop.is_running():
+                self._create_tracked_task(redis_service.save_room(room))
+        except RuntimeError:
+            pass
+
+    def _persist_player_cards(self, room_code: str, player: Player):
+        """Asynchronously triggers persistence of a player's cards to Redis."""
+        try:
+            loop = asyncio.get_running_loop()
+            if loop.is_running():
+                self._create_tracked_task(
+                    redis_service.save_player_cards(room_code, player.id, player.cards)
+                )
+        except RuntimeError:
+            pass
 
     def _create_tracked_task(self, coro) -> asyncio.Task:
         task = asyncio.create_task(coro)
@@ -68,16 +89,26 @@ class RoomService:
         # Process initial prizes
         room_prizes: List[Prize] = []
         if prizes:
-            for idx, p in enumerate(prizes, start=1):
+            valid_prizes_raw = [
+                p for p in prizes
+                if (p.get("title", "").strip() if isinstance(p, dict) else getattr(p, "title", "").strip())
+            ]
+            total_p = len(valid_prizes_raw)
+            for idx, p in enumerate(valid_prizes_raw, start=1):
                 title = p.get("title", "").strip() if isinstance(p, dict) else getattr(p, "title", "").strip()
                 desc = p.get("description", "").strip() if isinstance(p, dict) else getattr(p, "description", "").strip()
-                if title:
-                    room_prizes.append(Prize(
-                        id=f"prz_{uuid.uuid4().hex[:6]}",
-                        title=title,
-                        description=desc,
-                        order=idx,
-                    ))
+                raw_target = p.get("target_type") if isinstance(p, dict) else getattr(p, "target_type", None)
+                if raw_target in ("line", "blackout"):
+                    target_type = raw_target
+                else:
+                    target_type = "blackout" if idx == total_p else "line"
+                room_prizes.append(Prize(
+                    id=f"prz_{uuid.uuid4().hex[:6]}",
+                    title=title,
+                    description=desc,
+                    order=idx,
+                    target_type=target_type,
+                ))
 
         room = Room(
             code=room_code,
@@ -101,7 +132,72 @@ class RoomService:
         )
         self._sync_prize_targets(room)
         self.rooms[room_code] = room
+        self._persist_room(room)
         return room, host_player
+
+    async def create_next_game(
+        self,
+        old_room_code: str,
+        host_id: str,
+        name: Optional[str] = None,
+        prizes: Optional[List[dict]] = None,
+        win_condition: Optional[WinCondition] = None,
+        max_cards_per_player: Optional[int] = None,
+        draw_interval: Optional[float] = None,
+        draw_mode: Optional[DrawMode] = None,
+        contest_window_seconds: Optional[float] = None,
+    ) -> Tuple[Room, Player]:
+        old_room = await self.get_room_async(old_room_code)
+        if not old_room:
+            raise ValueError(f"Sala anterior '{old_room_code}' não encontrada.")
+        if old_room.host_id != host_id:
+            raise PermissionError("Apenas o Host pode iniciar uma nova partida.")
+
+        new_name = name or old_room.name
+        new_win_condition = win_condition or old_room.win_condition
+        new_max_cards = max_cards_per_player or old_room.max_cards_per_player
+        new_draw_interval = draw_interval or old_room.draw_interval
+        new_draw_mode = draw_mode or old_room.draw_mode
+        new_contest_window = contest_window_seconds or old_room.contest_window_seconds
+        new_is_public = old_room.is_public
+
+        if prizes is not None:
+            new_prizes_input = prizes
+        else:
+            new_prizes_input = [
+                {
+                    "title": p.title,
+                    "description": p.description,
+                    "target_type": p.target_type,
+                }
+                for p in old_room.prizes
+            ]
+
+        new_room, new_host = self.create_room(
+            host_name=old_room.host_name,
+            name=new_name,
+            win_condition=new_win_condition,
+            max_cards_per_player=new_max_cards,
+            is_public=new_is_public,
+            draw_interval=new_draw_interval,
+            draw_mode=new_draw_mode,
+            prizes=new_prizes_input,
+            contest_window_seconds=new_contest_window,
+        )
+
+        # Broadcast redirect to all players in old_room
+        await connection_manager.broadcast_to_room(old_room.code, {
+            "type": "new_game_redirect",
+            "payload": {
+                "new_room_code": new_room.code,
+                "room_name": new_room.name,
+                "pin": new_room.pin,
+                "host_name": old_room.host_name,
+                "message": f"O Anfitrião iniciou uma nova partida na sala {new_room.code}!",
+            }
+        })
+
+        return new_room, new_host
 
     def _sync_prize_targets(self, room: Room):
         if not room.prizes:
@@ -114,13 +210,32 @@ class RoomService:
             elif room.win_condition == WinCondition.BLACKOUT:
                 prize.target_type = "blackout"
             else:
-                if idx == total - 1:
-                    prize.target_type = "blackout"
-                else:
-                    prize.target_type = "line"
+                # In MULTI_STAGE, preserve explicit target_type if already specified,
+                # otherwise default the final prize to blackout and previous to line
+                if not getattr(prize, "target_type", None) or prize.target_type not in ("line", "blackout"):
+                    if idx == total - 1:
+                        prize.target_type = "blackout"
+                    else:
+                        prize.target_type = "line"
 
     def get_room(self, room_code: str) -> Optional[Room]:
-        return self.rooms.get(room_code)
+        return self.rooms.get(room_code.upper())
+
+    async def get_room_async(self, room_code: str) -> Optional[Room]:
+        code = room_code.upper()
+        room = self.rooms.get(code)
+        if room:
+            return room
+
+        loaded = await redis_service.get_room(code)
+        if loaded:
+            self.rooms[code] = loaded
+            # If the room was actively playing and automatic, resume the background draw loop
+            if loaded.status == RoomStatus.PLAYING and loaded.draw_mode == DrawMode.AUTO:
+                if code not in self.draw_tasks or self.draw_tasks[code].done():
+                    self._start_draw_loop(code)
+            return loaded
+        return None
 
     def join_room(
         self,
@@ -129,7 +244,8 @@ class RoomService:
         card_count: int = 1,
         token: Optional[str] = None,
     ) -> Tuple[Room, Player]:
-        room = self.rooms.get(room_code)
+        code = room_code.upper()
+        room = self.rooms.get(code)
         if not room:
             raise ValueError(f"Sala '{room_code}' não encontrada.")
 
@@ -138,6 +254,7 @@ class RoomService:
             for existing_player in room.players.values():
                 if existing_player.token == token:
                     existing_player.connected = True
+                    self._persist_room(room)
                     return room, existing_player
 
         player_id = f"p_{uuid.uuid4().hex[:8]}"
@@ -159,6 +276,48 @@ class RoomService:
             connected=True,
         )
         room.players[player_id] = player
+        self._persist_room(room)
+        return room, player
+
+    async def join_room_async(
+        self,
+        room_code: str,
+        player_name: str,
+        card_count: int = 1,
+        token: Optional[str] = None,
+    ) -> Tuple[Room, Player]:
+        code = room_code.upper()
+        room = await self.get_room_async(code)
+        if not room:
+            raise ValueError(f"Sala '{room_code}' não encontrada.")
+
+        # Check existing token for reconnection
+        if token:
+            for existing_player in room.players.values():
+                if existing_player.token == token:
+                    existing_player.connected = True
+                    await redis_service.save_room(room)
+                    return room, existing_player
+
+        player_id = f"p_{uuid.uuid4().hex[:8]}"
+        new_token = uuid.uuid4().hex
+
+        count = max(1, min(card_count, room.max_cards_per_player))
+        cards: List[BingoCard] = []
+        for i in range(count):
+            card_id = f"{player_id}_c{i+1}"
+            cards.append(generate_card(card_id))
+
+        player = Player(
+            id=player_id,
+            name=player_name,
+            is_host=False,
+            cards=cards,
+            token=new_token,
+            connected=True,
+        )
+        room.players[player_id] = player
+        await redis_service.save_room(room)
         return room, player
 
     async def start_game(self, room_code: str, host_id: str) -> Room:
@@ -177,11 +336,10 @@ class RoomService:
             room.stage = GameStage.LINE
         elif room.prizes:
             unawarded = [p for p in room.prizes if p.winner_id is None]
-            if len(unawarded) == 1:
-                # Single prize in room is the final prize -> Cartela Completa
-                room.stage = GameStage.BLACKOUT
+            if unawarded:
+                room.stage = GameStage.BLACKOUT if unawarded[0].target_type == "blackout" else GameStage.LINE
             else:
-                room.stage = GameStage.LINE
+                room.stage = GameStage.BLACKOUT
         else:
             room.stage = GameStage.LINE
 
@@ -201,6 +359,7 @@ class RoomService:
         if room.draw_mode == DrawMode.AUTO:
             self._start_draw_loop(room_code)
 
+        await redis_service.save_room(room)
         return room
 
     def _start_draw_loop(self, room_code: str):
@@ -254,6 +413,7 @@ class RoomService:
 
         if not room.remaining_balls:
             room.status = RoomStatus.FINISHED
+            await redis_service.save_room(room)
             await connection_manager.broadcast_to_room(room_code, {
                 "type": "game_over",
                 "payload": {"reason": "Todas as 75 pedras foram sorteadas."}
@@ -276,6 +436,7 @@ class RoomService:
         )
         room.game_log.append(log_entry)
 
+        await redis_service.save_room(room)
         await connection_manager.broadcast_to_room(room_code, {
             "type": "ball_drawn",
             "payload": {
@@ -312,6 +473,7 @@ class RoomService:
             if room.draw_mode == DrawMode.AUTO:
                 self._start_draw_loop(room_code)
 
+        await redis_service.save_room(room)
         return room
 
     async def set_speed(self, room_code: str, host_id: str, interval: float) -> Room:
@@ -319,6 +481,7 @@ class RoomService:
         if not room or room.host_id != host_id:
             raise PermissionError("Não autorizado.")
         room.draw_interval = max(2.0, min(interval, 60.0))
+        await redis_service.save_room(room)
         await connection_manager.broadcast_to_room(room_code, {
             "type": "speed_changed",
             "payload": {"draw_interval": room.draw_interval}
@@ -336,28 +499,54 @@ class RoomService:
                     for cell in row:
                         if cell.number == number and not cell.is_free:
                             cell.marked = not cell.marked
+                            self._persist_player_cards(room.code, player)
+                            self._persist_room(room)
                             return True
         return False
 
-    async def add_prize(self, room_code: str, host_id: str, title: str, description: str = "") -> Prize:
-        room = self.rooms.get(room_code)
+    async def mark_number_async(self, room_code: str, player_id: str, card_id: str, number: int) -> bool:
+        room = await self.get_room_async(room_code)
+        if not room or player_id not in room.players:
+            return False
+        player = room.players[player_id]
+        for card in player.cards:
+            if card.id == card_id:
+                for row in card.grid:
+                    for cell in row:
+                        if cell.number == number and not cell.is_free:
+                            cell.marked = not cell.marked
+                            await redis_service.save_player_cards(room.code, player.id, player.cards)
+                            await redis_service.save_room(room)
+                            return True
+        return False
+
+    async def add_prize(
+        self, room_code: str, host_id: str, title: str, description: str = "", target_type: str = "line"
+    ) -> Prize:
+        room = await self.get_room_async(room_code)
         if not room or room.host_id != host_id:
             raise PermissionError("Não autorizado.")
+        valid_target = target_type if target_type in ("line", "blackout") else "line"
         prize = Prize(
             id=f"prz_{uuid.uuid4().hex[:6]}",
             title=title.strip(),
             description=description.strip(),
+            target_type=valid_target,
             order=len(room.prizes) + 1,
         )
         room.prizes.append(prize)
         self._sync_prize_targets(room)
         if room.status == RoomStatus.PLAYING:
             unawarded = [p for p in room.prizes if p.winner_id is None]
-            if len(unawarded) == 1:
-                room.stage = GameStage.BLACKOUT
-            elif len(unawarded) > 1 and room.win_condition != WinCondition.BLACKOUT:
-                room.stage = GameStage.LINE
+            if unawarded:
+                if room.win_condition == WinCondition.BLACKOUT:
+                    room.stage = GameStage.BLACKOUT
+                elif room.win_condition == WinCondition.LINE:
+                    room.stage = GameStage.LINE
+                else:
+                    room.stage = GameStage.BLACKOUT if unawarded[0].target_type == "blackout" else GameStage.LINE
 
+        await redis_service.save_room(room)
         await connection_manager.broadcast_to_room(room_code, {
             "type": "prizes_updated",
             "payload": {
@@ -367,17 +556,68 @@ class RoomService:
         })
         return prize
 
+    async def update_prize(
+        self,
+        room_code: str,
+        host_id: str,
+        prize_id: str,
+        title: Optional[str] = None,
+        description: Optional[str] = None,
+        target_type: Optional[str] = None,
+    ) -> Prize:
+        room = await self.get_room_async(room_code)
+        if not room or room.host_id != host_id:
+            raise PermissionError("Não autorizado.")
+
+        target_prize = next((p for p in room.prizes if p.id == prize_id), None)
+        if not target_prize:
+            raise ValueError(f"Prêmio '{prize_id}' não encontrado.")
+
+        if target_prize.winner_id is not None:
+            raise ValueError("Não é possível alterar um prêmio já concedido.")
+
+        if title is not None:
+            target_prize.title = title.strip()
+        if description is not None:
+            target_prize.description = description.strip()
+        if target_type is not None:
+            if target_type not in ("line", "blackout"):
+                raise ValueError("target_type deve ser 'line' ou 'blackout'.")
+            target_prize.target_type = target_type
+
+        # If playing in MULTI_STAGE, updating the current active prize target changes the active stage
+        if room.status == RoomStatus.PLAYING and room.win_condition == WinCondition.MULTI_STAGE:
+            unawarded = [p for p in room.prizes if p.winner_id is None]
+            if unawarded and unawarded[0].id == prize_id:
+                room.stage = GameStage.BLACKOUT if target_prize.target_type == "blackout" else GameStage.LINE
+
+        await redis_service.save_room(room)
+        await connection_manager.broadcast_to_room(room_code, {
+            "type": "prizes_updated",
+            "payload": {
+                "prizes": [p.model_dump() for p in room.prizes],
+                "stage": room.stage.value,
+            }
+        })
+        return target_prize
+
     async def remove_prize(self, room_code: str, host_id: str, prize_id: str) -> bool:
-        room = self.rooms.get(room_code)
+        room = await self.get_room_async(room_code)
         if not room or room.host_id != host_id:
             raise PermissionError("Não autorizado.")
         room.prizes = [p for p in room.prizes if p.id != prize_id]
         self._sync_prize_targets(room)
         if room.status == RoomStatus.PLAYING:
             unawarded = [p for p in room.prizes if p.winner_id is None]
-            if len(unawarded) == 1:
-                room.stage = GameStage.BLACKOUT
+            if unawarded:
+                if room.win_condition == WinCondition.BLACKOUT:
+                    room.stage = GameStage.BLACKOUT
+                elif room.win_condition == WinCondition.LINE:
+                    room.stage = GameStage.LINE
+                else:
+                    room.stage = GameStage.BLACKOUT if unawarded[0].target_type == "blackout" else GameStage.LINE
 
+        await redis_service.save_room(room)
         await connection_manager.broadcast_to_room(room_code, {
             "type": "prizes_updated",
             "payload": {
@@ -512,6 +752,7 @@ class RoomService:
             self.contest_tasks[room_code] = self._create_tracked_task(
                 self._handle_contest_window(room_code, contest.id, duration)
             )
+            await redis_service.save_room(room)
             return True, result.win_type or "Bingo", candidate
 
         elif room.active_contest.status == ContestStatus.WINDOW:
@@ -535,6 +776,7 @@ class RoomService:
                     "message": f"⚡ {player.name} também cantou BINGO na pedra {contest.ball}! Total em disputa: {len(contest.candidates)}.",
                 }
             })
+            await redis_service.save_room(room)
             return True, result.win_type or "Bingo", candidate
 
         else:
@@ -633,6 +875,7 @@ class RoomService:
                 self.contest_tasks[room_code].cancel()
             await self._resolve_tiebreaker(room_code, contest)
 
+        await redis_service.save_room(room)
         return True
 
     async def _handle_tiebreaker_timeout(self, room_code: str, contest_id: str, timeout_seconds: float):
@@ -809,67 +1052,29 @@ class RoomService:
                         "message": f"🎉 BINGO! Parabéns {winner_cand.player_name} faturou o Grande Prêmio Final ({winner_cand.pattern_name}){tb_mention}{prize_announcement}",
                     }
                 })
-            elif len(unawarded) == 1:
-                last_prize = unawarded[0]
+            else:
+                next_prize = unawarded[0]
                 if room.win_condition == WinCondition.LINE:
                     room.stage = GameStage.LINE
-                    await connection_manager.broadcast_to_room(room_code, {
-                        "type": "bingo_valid",
-                        "payload": {
-                            "winner": winner_info.model_dump(),
-                            "card_id": winner_cand.card_id,
-                            "pattern_id": winner_cand.pattern_id,
-                            "pattern_type": winner_cand.pattern_type,
-                            "pattern_name": winner_cand.pattern_name,
-                            "line_index": winner_cand.line_index,
-                            "winning_cells": winner_cand.winning_cells,
-                            "winning_numbers": winner_cand.winning_numbers,
-                            "on_ball": on_ball,
-                            "was_tiebreaker": was_tiebreaker,
-                            "winning_stone": winner_cand.chosen_stone if was_tiebreaker else None,
-                            "log_entry": win_log_entry.model_dump(),
-                            "game_log": [e.model_dump() for e in room.game_log],
-                            "awarded_prize": awarded_prize.model_dump() if awarded_prize else None,
-                            "prizes": [p.model_dump() for p in room.prizes],
-                            "next_stage": "line",
-                            "stage_name": "Linha",
-                            "game_over": False,
-                            "message": f"Parabéns! {winner_cand.player_name} bateu Linha ({winner_cand.pattern_name}){tb_mention}{prize_announcement} A partida continua para o último prêmio de Linha: 🎁 {last_prize.title}!",
-                        }
-                    })
-                    self._create_tracked_task(self._resume_after_delay(room_code, 5.0))
-                else:
-                    # Exactly 1 unawarded prize remains: Strictly transition to Cartela Completa
+                    target = "line"
+                elif room.win_condition == WinCondition.BLACKOUT:
                     room.stage = GameStage.BLACKOUT
-                    await connection_manager.broadcast_to_room(room_code, {
-                        "type": "bingo_valid",
-                        "payload": {
-                            "winner": winner_info.model_dump(),
-                            "card_id": winner_cand.card_id,
-                            "pattern_id": winner_cand.pattern_id,
-                            "pattern_type": winner_cand.pattern_type,
-                            "pattern_name": winner_cand.pattern_name,
-                            "line_index": winner_cand.line_index,
-                            "winning_cells": winner_cand.winning_cells,
-                            "winning_numbers": winner_cand.winning_numbers,
-                            "on_ball": on_ball,
-                            "was_tiebreaker": was_tiebreaker,
-                            "winning_stone": winner_cand.chosen_stone if was_tiebreaker else None,
-                            "log_entry": win_log_entry.model_dump(),
-                            "game_log": [e.model_dump() for e in room.game_log],
-                            "awarded_prize": awarded_prize.model_dump() if awarded_prize else None,
-                            "prizes": [p.model_dump() for p in room.prizes],
-                            "next_stage": "blackout",
-                            "stage_name": "Cartela Cheia",
-                            "game_over": False,
-                            "message": f"Parabéns! {winner_cand.player_name} bateu Linha ({winner_cand.pattern_name}){tb_mention}{prize_announcement} A partida avança para a CARTELA COMPLETA disputando: 🏆 {last_prize.title}!",
-                        }
-                    })
-                    self._create_tracked_task(self._resume_after_delay(room_code, 5.0))
-            else:
-                # Multiple preliminary prizes remain: Keep stage in LINE
-                next_prize = unawarded[0]
-                room.stage = GameStage.LINE
+                    target = "blackout"
+                else:  # MULTI_STAGE
+                    if next_prize.target_type == "blackout":
+                        room.stage = GameStage.BLACKOUT
+                        target = "blackout"
+                    else:
+                        room.stage = GameStage.LINE
+                        target = "line"
+
+                stage_name = "Cartela Cheia" if target == "blackout" else "Linha"
+                msg_target = (
+                    f"a CARTELA COMPLETA disputando: 🏆 {next_prize.title}!"
+                    if target == "blackout"
+                    else f"o próximo prêmio de Linha: 🎁 {next_prize.title}!"
+                )
+
                 await connection_manager.broadcast_to_room(room_code, {
                     "type": "bingo_valid",
                     "payload": {
@@ -888,10 +1093,10 @@ class RoomService:
                         "game_log": [e.model_dump() for e in room.game_log],
                         "awarded_prize": awarded_prize.model_dump() if awarded_prize else None,
                         "prizes": [p.model_dump() for p in room.prizes],
-                        "next_stage": "line",
-                        "stage_name": "Linha",
+                        "next_stage": target,
+                        "stage_name": stage_name,
                         "game_over": False,
-                        "message": f"Parabéns! {winner_cand.player_name} bateu Linha ({winner_cand.pattern_name}){tb_mention}{prize_announcement} A partida continua para o próximo prêmio de Linha: 🎁 {next_prize.title}!",
+                        "message": f"Parabéns! {winner_cand.player_name} bateu ({winner_cand.pattern_name}){tb_mention}{prize_announcement} A partida {'avança para' if target == 'blackout' else 'continua para'} {msg_target}",
                     }
                 })
                 self._create_tracked_task(self._resume_after_delay(room_code, 5.0))
@@ -952,6 +1157,7 @@ class RoomService:
                     }
                 })
 
+        await redis_service.save_room(room)
         return winner_info
 
     async def resolve_contest_window(self, room_code: str):
@@ -1065,6 +1271,7 @@ class RoomService:
             }
         })
 
+        await redis_service.save_room(room)
         return room, new_manager
 
     def get_public_rooms(self) -> List[dict]:
@@ -1084,14 +1291,23 @@ class RoomService:
                 })
         return public_list
 
+    async def get_public_rooms_async(self) -> List[dict]:
+        redis_codes = await redis_service.get_all_room_codes()
+        for code in redis_codes:
+            if code not in self.rooms:
+                await self.get_room_async(code)
+        return self.get_public_rooms()
+
     def cleanup_expired_rooms(self, max_idle_seconds: float = 86400) -> int:
         """Evicts finished or inactive rooms older than max_idle_seconds to prevent memory leaks."""
         now = time.time()
         expired_codes = []
+        expired_players = {}
         for code, r in list(self.rooms.items()):
             idle_time = now - max(r.manager_last_active_at, r.created_at)
             if (r.status == RoomStatus.FINISHED or r.get_player_count() == 0) and idle_time > max_idle_seconds:
                 expired_codes.append(code)
+                expired_players[code] = list(r.players.keys())
 
         for code in expired_codes:
             if code in self.draw_tasks and not self.draw_tasks[code].done():
@@ -1099,6 +1315,12 @@ class RoomService:
             if code in self.contest_tasks and not self.contest_tasks[code].done():
                 self.contest_tasks[code].cancel()
             self.rooms.pop(code, None)
+            try:
+                loop = asyncio.get_running_loop()
+                if loop.is_running():
+                    self._create_tracked_task(redis_service.delete_room(code, expired_players.get(code)))
+            except RuntimeError:
+                pass
 
         if expired_codes:
             logger.info("Limpeza de salas expiradas concluída: %d salas removidas", len(expired_codes))

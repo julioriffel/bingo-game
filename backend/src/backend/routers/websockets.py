@@ -12,7 +12,7 @@ router = APIRouter(tags=["websockets"])
 @router.websocket("/ws/{room_code}")
 async def websocket_endpoint(websocket: WebSocket, room_code: str):
     code = room_code.upper()
-    room = room_service.get_room(code)
+    room = await room_service.get_room_async(code)
     if not room:
         await websocket.close(code=4004, reason="Sala inexistente")
         return
@@ -97,6 +97,7 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str):
                         "type": "room_state",
                         "payload": {
                             "code": room.code,
+                            "cards": [c.model_dump() for c in player.cards],
                             "host_id": room.host_id,
                             "host_name": room.host_name,
                             "manager_last_active_at": room.manager_last_active_at,
@@ -191,7 +192,7 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str):
                 if player_id and current_player_id == player_id and card_id and raw_number is not None:
                     try:
                         number = int(raw_number)
-                        room_service.mark_number(code, player_id, card_id, number)
+                        await room_service.mark_number_async(code, player_id, card_id, number)
                     except (ValueError, TypeError):
                         pass
 
@@ -234,6 +235,7 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str):
                 host_id = payload.get("host_id")
                 title = payload.get("title", "")
                 description = payload.get("description", "")
+                target_type = payload.get("target_type", "line")
                 if not current_player_id or current_player_id != room.host_id or host_id != room.host_id:
                     await connection_manager.send_personal(websocket, {
                         "type": "error", "payload": {"message": "Apenas o Host pode adicionar prêmios"}
@@ -241,7 +243,33 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str):
                     continue
                 if title:
                     try:
-                        await room_service.add_prize(code, host_id, str(title), str(description))
+                        await room_service.add_prize(code, host_id, str(title), str(description), str(target_type))
+                    except Exception as e:
+                        await connection_manager.send_personal(websocket, {
+                            "type": "error", "payload": {"message": str(e)}
+                        })
+
+            elif msg_type == "update_prize":
+                host_id = payload.get("host_id")
+                prize_id = payload.get("prize_id")
+                title = payload.get("title")
+                description = payload.get("description")
+                target_type = payload.get("target_type")
+                if not current_player_id or current_player_id != room.host_id or host_id != room.host_id:
+                    await connection_manager.send_personal(websocket, {
+                        "type": "error", "payload": {"message": "Apenas o Host pode editar prêmios"}
+                    })
+                    continue
+                if prize_id:
+                    try:
+                        await room_service.update_prize(
+                            code,
+                            host_id,
+                            str(prize_id),
+                            title=str(title) if title is not None else None,
+                            description=str(description) if description is not None else None,
+                            target_type=str(target_type) if target_type is not None else None,
+                        )
                     except Exception as e:
                         await connection_manager.send_personal(websocket, {
                             "type": "error", "payload": {"message": str(e)}
@@ -276,6 +304,33 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str):
                         await connection_manager.send_personal(websocket, {
                             "type": "error", "payload": {"message": str(e)}
                         })
+
+            elif msg_type == "start_new_game":
+                host_id = payload.get("host_id")
+                if not current_player_id or current_player_id != room.host_id or host_id != room.host_id:
+                    await connection_manager.send_personal(websocket, {
+                        "type": "error", "payload": {"message": "Apenas o Host pode iniciar nova partida"}
+                    })
+                    continue
+                try:
+                    new_room, new_host = await room_service.create_next_game(code, host_id)
+                    await connection_manager.send_personal(websocket, {
+                        "type": "new_game_created_host",
+                        "payload": {
+                            "new_room_code": new_room.code,
+                            "pin": new_room.pin,
+                            "host_id": new_host.id,
+                            "token": new_host.token,
+                            "prizes": [p.model_dump() for p in new_room.prizes],
+                            "draw_interval": new_room.draw_interval,
+                            "draw_mode": new_room.draw_mode.value,
+                            "win_condition": new_room.win_condition.value,
+                        }
+                    })
+                except Exception as e:
+                    await connection_manager.send_personal(websocket, {
+                        "type": "error", "payload": {"message": str(e)}
+                    })
 
     except WebSocketDisconnect:
         logger.info("Cliente WebSocket desconectado normalmente", extra={"room_code": code})

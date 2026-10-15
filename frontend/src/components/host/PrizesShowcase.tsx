@@ -5,7 +5,8 @@ import { Gift, Crown, Plus, Trash2, Trophy, Sparkles } from 'lucide-react';
 interface PrizesShowcaseProps {
   prizes: Prize[];
   isHost?: boolean;
-  onAddPrize?: (title: string, description: string) => void;
+  onAddPrize?: (title: string, description: string, targetType: 'line' | 'blackout') => void;
+  onUpdatePrizeTarget?: (prizeId: string, targetType: 'line' | 'blackout') => void;
   onRemovePrize?: (prizeId: string) => void;
 }
 
@@ -13,18 +14,21 @@ export const PrizesShowcase: React.FC<PrizesShowcaseProps> = ({
   prizes = [],
   isHost = false,
   onAddPrize,
+  onUpdatePrizeTarget,
   onRemovePrize,
 }) => {
   const [showAddForm, setShowAddForm] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [newDesc, setNewDesc] = useState('');
+  const [newTargetType, setNewTargetType] = useState<'line' | 'blackout'>('line');
 
   const handleAdd = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTitle.trim() || !onAddPrize) return;
-    onAddPrize(newTitle.trim(), newDesc.trim());
+    onAddPrize(newTitle.trim(), newDesc.trim(), newTargetType);
     setNewTitle('');
     setNewDesc('');
+    setNewTargetType('line');
     setShowAddForm(false);
   };
 
@@ -71,7 +75,7 @@ export const PrizesShowcase: React.FC<PrizesShowcaseProps> = ({
       {/* Inline add form */}
       {showAddForm && (
         <form onSubmit={handleAdd} className="p-4 rounded-2xl bg-slate-950 border border-amber-500/50 space-y-3 animate-scale-in shadow-xl">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 items-center">
             <div>
               <label htmlFor="prize-title-input" className="sr-only">Nome do prêmio</label>
               <input
@@ -81,7 +85,7 @@ export const PrizesShowcase: React.FC<PrizesShowcaseProps> = ({
                 autoFocus
                 value={newTitle}
                 onChange={(e) => setNewTitle(e.target.value)}
-                placeholder="Nome do prêmio (ex: Fritadeira Air Fryer)"
+                placeholder="Nome do prêmio (ex: Air Fryer)"
                 className="min-h-[44px] w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-400"
               />
             </div>
@@ -95,6 +99,33 @@ export const PrizesShowcase: React.FC<PrizesShowcaseProps> = ({
                 placeholder="Descrição (opcional)"
                 className="min-h-[44px] w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-400"
               />
+            </div>
+            <div>
+              <label className="sr-only">Tipo de Prêmio</label>
+              <div className="flex bg-slate-900 p-1 rounded-xl border border-slate-700">
+                <button
+                  type="button"
+                  onClick={() => setNewTargetType('line')}
+                  className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    newTargetType === 'line'
+                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-xs'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  ⚡ Linha
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNewTargetType('blackout')}
+                  className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    newTargetType === 'blackout'
+                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-xs'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  🏆 Cartela Cheia
+                </button>
+              </div>
             </div>
           </div>
           <div className="flex justify-end gap-2 pt-1">
@@ -129,7 +160,7 @@ export const PrizesShowcase: React.FC<PrizesShowcaseProps> = ({
             const hasWon = Boolean(prize.winner_name);
             const isNext = idx === nextPrizeIndex && !hasWon;
             const isLastPrize = idx === prizes.length - 1;
-            const isBlackout = prize.target_type === 'blackout' || isLastPrize;
+            const isBlackout = prize.target_type ? prize.target_type === 'blackout' : isLastPrize;
 
             return (
               <div
@@ -158,15 +189,33 @@ export const PrizesShowcase: React.FC<PrizesShowcaseProps> = ({
                     >
                       {prize.order ? `${prize.order}º PRÊMIO` : `#${idx + 1}`}
                     </span>
-                    <span
-                      className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border ${
-                        isBlackout
-                          ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                          : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-                      }`}
-                    >
-                      {isBlackout ? '🏆 Cartela Completa' : 'Linha'}
-                    </span>
+                    {isHost && onUpdatePrizeTarget && !hasWon ? (
+                      <button
+                        type="button"
+                        onClick={() => onUpdatePrizeTarget(prize.id, isBlackout ? 'line' : 'blackout')}
+                        title="Clique para alternar entre Linha e Cartela Completa"
+                        aria-label={`Alternar tipo do prêmio ${prize.title}: atualmente ${
+                          isBlackout ? 'Cartela Completa' : 'Linha'
+                        }`}
+                        className={`text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full border transition-all cursor-pointer active:scale-95 flex items-center gap-1 ${
+                          isBlackout
+                            ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/30'
+                            : 'bg-amber-500/20 text-amber-300 border-amber-500/40 hover:bg-amber-500/30'
+                        }`}
+                      >
+                        {isBlackout ? '🏆 Cartela Completa' : '⚡ Linha'}
+                      </button>
+                    ) : (
+                      <span
+                        className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border ${
+                          isBlackout
+                            ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                            : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                        }`}
+                      >
+                        {isBlackout ? '🏆 Cartela Completa' : 'Linha'}
+                      </span>
+                    )}
                     {isNext && (
                       <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-amber-400">
                         <Sparkles className="w-3 h-3" /> EM DISPUTA AGORA

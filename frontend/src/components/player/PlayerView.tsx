@@ -17,6 +17,8 @@ interface PlayerViewProps {
   managerInactive?: boolean;
   soundEnabled?: boolean;
   onToggleSound?: () => void;
+  isHost?: boolean;
+  onStartNewGame?: () => void;
 }
 
 function getLetterForBall(ball: number | null): string {
@@ -40,10 +42,17 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
   managerInactive,
   soundEnabled = true,
   onToggleSound,
+  isHost = false,
+  onStartNewGame,
 }) => {
   const [activeCardIndex, setActiveCardIndex] = useState(0);
   const [assistMode, setAssistMode] = useState(true);
   const [isLogOpen, setIsLogOpen] = useState(false);
+
+  const allPrizesWon =
+    gameState.status === 'finished' ||
+    (Boolean(gameState.prizes && gameState.prizes.length > 0) &&
+      gameState.prizes!.every((p) => Boolean(p.winner_name)));
 
   const activeCard = cards[activeCardIndex] || cards[0];
   const lastBalls = [...gameState.drawn_balls].reverse().slice(0, 5);
@@ -255,7 +264,7 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
           <div className="flex gap-2 overflow-x-auto pb-1 text-xs">
             {gameState.prizes.map((p, idx) => {
               const isLastPrize = idx === (gameState.prizes?.length || 0) - 1;
-              const isBlackout = p.target_type === 'blackout' || isLastPrize;
+              const isBlackout = p.target_type ? p.target_type === 'blackout' : isLastPrize;
 
               return (
                 <div
@@ -371,21 +380,44 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
         </div>
       </div>
 
-      {/* Bottom Sticky Action: BINGO Button */}
+      {/* Bottom Sticky Action: BINGO Button or Game Over */}
       <div className="pt-2 sticky bottom-3 z-30 pb-safe">
-        <button
-          type="button"
-          onClick={handleBingoClick}
-          aria-label="Cantar Bingo agora"
-          className={`w-full py-4 sm:py-4.5 rounded-2xl font-display font-black text-2xl sm:text-3xl tracking-widest text-slate-950 transition-all flex items-center justify-center gap-2.5 cursor-pointer touch-manipulation active:scale-[0.97] border-2 border-amber-300 shadow-2xl ${
-            hasWonAnyPattern
-              ? 'bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-400 animate-victory-pulse shadow-amber-400/60'
-              : 'bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 hover:from-amber-400 hover:to-amber-300 shadow-amber-500/40 glow-bingo'
-          }`}
-        >
-          <Sparkles className="w-6 h-6 sm:w-7 sm:h-7 stroke-[2.5]" />
-          BINGO!
-        </button>
+        {allPrizesWon ? (
+          <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-500/20 via-slate-900 to-emerald-500/20 border-2 border-amber-400/50 shadow-2xl text-center space-y-2 animate-scale-in">
+            <div className="flex items-center justify-center gap-2 text-sm font-display font-black text-amber-300">
+              <Trophy className="w-5 h-5" />
+              <span>PARTIDA FINALIZADA!</span>
+            </div>
+            <p className="text-xs text-slate-300">
+              {isHost
+                ? 'Todos os prêmios foram entregues. Inicie uma nova partida para os jogadores.'
+                : 'Todos os prêmios foram sorteados. Aguarde o Anfitrião iniciar a nova rodada!'}
+            </p>
+            {isHost && onStartNewGame && (
+              <button
+                type="button"
+                onClick={onStartNewGame}
+                className="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-400 hover:from-emerald-400 hover:to-emerald-300 text-slate-950 font-display font-black text-sm tracking-wide shadow-lg shadow-emerald-500/30 flex items-center justify-center gap-2 cursor-pointer active:scale-95 transition-all"
+              >
+                <Sparkles className="w-4 h-4 fill-current" /> INICIAR NOVA PARTIDA
+              </button>
+            )}
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={handleBingoClick}
+            aria-label="Cantar Bingo agora"
+            className={`w-full py-4 sm:py-4.5 rounded-2xl font-display font-black text-2xl sm:text-3xl tracking-widest text-slate-950 transition-all flex items-center justify-center gap-2.5 cursor-pointer touch-manipulation active:scale-[0.97] border-2 border-amber-300 shadow-2xl ${
+              hasWonAnyPattern
+                ? 'bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-400 animate-victory-pulse shadow-amber-400/60'
+                : 'bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 hover:from-amber-400 hover:to-amber-300 shadow-amber-500/40 glow-bingo'
+            }`}
+          >
+            <Sparkles className="w-6 h-6 sm:w-7 sm:h-7 stroke-[2.5]" />
+            BINGO!
+          </button>
+        )}
       </div>
 
       {/* Game Log Modal */}

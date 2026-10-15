@@ -18,6 +18,7 @@ import {
   Crown,
   Keyboard,
   Lock,
+  Sparkles,
 } from 'lucide-react';
 
 interface HostScreenProps {
@@ -32,9 +33,11 @@ interface HostScreenProps {
   voiceEnabled: boolean;
   onToggleVoice: () => void;
   onBackToPlayerView?: () => void;
-  onAddPrize?: (title: string, description: string) => void;
+  onAddPrize?: (title: string, description: string, targetType: 'line' | 'blackout') => void;
+  onUpdatePrizeTarget?: (prizeId: string, targetType: 'line' | 'blackout') => void;
   onRemovePrize?: (prizeId: string) => void;
   onOpenUsers?: () => void;
+  onStartNewGame?: () => void;
 }
 
 function getLetterForBall(ball: number | null): string {
@@ -59,8 +62,10 @@ export const HostScreen: React.FC<HostScreenProps> = ({
   onToggleVoice,
   onBackToPlayerView,
   onAddPrize,
+  onUpdatePrizeTarget,
   onRemovePrize,
   onOpenUsers,
+  onStartNewGame,
 }) => {
   const [isLogOpen, setIsLogOpen] = useState(false);
 
@@ -68,6 +73,11 @@ export const HostScreen: React.FC<HostScreenProps> = ({
     gameState.active_contest &&
     (gameState.active_contest.status === 'window' || gameState.active_contest.status === 'tiebreaker')
   );
+
+  const allPrizesWon =
+    gameState.status === 'finished' ||
+    (Boolean(gameState.prizes && gameState.prizes.length > 0) &&
+      gameState.prizes!.every((p) => Boolean(p.winner_name)));
 
   // Spacebar shortcut to draw next or toggle pause
   useEffect(() => {
@@ -297,8 +307,37 @@ export const HostScreen: React.FC<HostScreenProps> = ({
             prizes={gameState.prizes || []}
             isHost={isHost}
             onAddPrize={onAddPrize}
+            onUpdatePrizeTarget={onUpdatePrizeTarget}
             onRemovePrize={onRemovePrize}
           />
+
+          {/* Fim de Jogo & Iniciar Nova Partida Banner */}
+          {allPrizesWon && (
+            <div className="p-5 sm:p-6 rounded-3xl bg-gradient-to-r from-amber-500/20 via-emerald-500/20 to-indigo-500/20 border-2 border-amber-400/60 shadow-2xl flex flex-wrap items-center justify-between gap-4 animate-scale-in">
+              <div className="flex items-center gap-3.5">
+                <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-amber-500 to-amber-300 text-slate-950 flex items-center justify-center font-black shadow-lg shadow-amber-500/30 shrink-0">
+                  <Trophy className="w-6 h-6" />
+                </div>
+                <div>
+                  <h4 className="font-display font-black text-base sm:text-lg text-slate-100 flex items-center gap-2">
+                    🎉 Fim de Jogo! Todos os Prêmios Foram Entregues!
+                  </h4>
+                  <p className="text-xs text-slate-300">
+                    A rodada foi concluída com sucesso. Clique para iniciar uma nova partida e redirecionar os jogadores.
+                  </p>
+                </div>
+              </div>
+              {isHost && onStartNewGame && (
+                <button
+                  type="button"
+                  onClick={onStartNewGame}
+                  className="min-h-[46px] px-6 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-400 hover:from-emerald-400 hover:to-emerald-300 text-slate-950 font-display font-black text-sm tracking-wide shadow-lg shadow-emerald-500/30 flex items-center gap-2 cursor-pointer active:scale-95 transition-all"
+                >
+                  <Sparkles className="w-5 h-5 fill-current" /> INICIAR NOVA PARTIDA
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -329,7 +368,17 @@ export const HostScreen: React.FC<HostScreenProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            {gameState.status === 'lobby' ? (
+            {allPrizesWon ? (
+              onStartNewGame && (
+                <button
+                  type="button"
+                  onClick={onStartNewGame}
+                  className="min-h-[44px] px-6 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-400 hover:from-emerald-400 hover:to-emerald-300 text-slate-950 font-display font-black text-sm tracking-wide shadow-lg shadow-emerald-500/30 flex items-center gap-2 cursor-pointer active:scale-95 transition-all"
+                >
+                  <Sparkles className="w-5 h-5 fill-current" /> INICIAR NOVA PARTIDA
+                </button>
+              )
+            ) : gameState.status === 'lobby' ? (
               <button
                 type="button"
                 onClick={onStartGame}

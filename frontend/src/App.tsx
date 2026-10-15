@@ -9,6 +9,8 @@ import { HostScreen } from './components/host/HostScreen';
 import { TiebreakerModal } from './components/common/TiebreakerModal';
 import { UsersListModal } from './components/common/UsersListModal';
 import { HelpModal } from './components/common/HelpModal';
+import { NewGameRedirectModal } from './components/common/NewGameRedirectModal';
+import { HostNewGameModal } from './components/host/HostNewGameModal';
 import { useWebSocket } from './hooks/useWebSocket';
 import { useAudio } from './hooks/useAudio';
 import { useSpeech } from './hooks/useSpeech';
@@ -118,6 +120,16 @@ export function App() {
   const [isCreateOpen, setIsCreateOpen] = useState<boolean>(false);
   const [joinModalCode, setJoinModalCode] = useState<string | null>(null);
   const [statusBanner, setStatusBanner] = useState<string | null>(null);
+  const [newGameRedirect, setNewGameRedirect] = useState<{
+    new_room_code: string;
+    room_name?: string;
+    pin?: string;
+    host_name?: string;
+    message?: string;
+  } | null>(null);
+  const [isHostNewGameOpen, setIsHostNewGameOpen] = useState<boolean>(false);
+  const [prefilledRoomConfig, setPrefilledRoomConfig] = useState<any>(null);
+  const [isStartingNewGame, setIsStartingNewGame] = useState<boolean>(false);
   // Sound & Speech preferences with localStorage persistence (Android & Web)
   const [soundEnabled, setSoundEnabled] = useState<boolean>(() => {
     try {
@@ -245,6 +257,9 @@ export function App() {
 
         case 'room_state':
           if (payload) {
+            if (payload.cards && Array.isArray(payload.cards) && payload.cards.length > 0) {
+              setCards(payload.cards);
+            }
             if (payload.users) setUsers(payload.users);
             setGameState((prev) => ({
               ...prev,
@@ -491,6 +506,8 @@ export function App() {
             setGameState((prev) => ({
               ...prev,
               active_contest: null,
+              status: payload.game_over ? 'finished' : prev.status,
+              stage: payload.game_over ? 'completed' : (payload.next_stage || prev.stage),
               prizes: payload.prizes || prev.prizes,
               game_log: payload.game_log
                 ? payload.game_log
@@ -526,8 +543,53 @@ export function App() {
           break;
 
         case 'game_over':
-          setGameState((prev) => ({ ...prev, status: 'finished' }));
+          setGameState((prev) => ({ ...prev, status: 'finished', stage: 'completed' }));
           setStatusBanner('Partida encerrada!');
+          break;
+
+        case 'new_game_redirect':
+          if (payload?.new_room_code) {
+            if (soundEnabled) playVictory();
+            setNewGameRedirect({
+              new_room_code: payload.new_room_code,
+              room_name: payload.room_name,
+              pin: payload.pin,
+              host_name: payload.host_name,
+              message: payload.message,
+            });
+            setStatusBanner(payload.message || 'Nova partida iniciada pelo anfitrião!');
+            if (soundEnabled && voiceEnabled) {
+              speakText('Atenção! O Anfitrião iniciou uma nova partida!');
+            }
+          }
+          break;
+
+        case 'new_game_created_host':
+          if (payload?.new_room_code) {
+            setIsHostNewGameOpen(false);
+            setRoomCode(payload.new_room_code);
+            setRoomPin(payload.pin || '');
+            setPlayerId(payload.host_id);
+            setPlayerToken(payload.token);
+            setIsHost(true);
+            setCards([]);
+            setGameState((prev) => ({
+              ...prev,
+              code: payload.new_room_code,
+              status: 'lobby',
+              stage: 'waiting',
+              drawn_balls: [],
+              last_drawn_ball: null,
+              remaining_balls: 75,
+              draw_interval: payload.draw_interval || prev.draw_interval,
+              draw_mode: payload.draw_mode || prev.draw_mode,
+              prizes: payload.prizes || [],
+              game_log: [],
+              active_contest: null,
+            }));
+            setCurrentView('host');
+            setStatusBanner(`Nova sala ${payload.new_room_code} criada com sucesso!`);
+          }
           break;
       }
     },
@@ -691,6 +753,8 @@ export function App() {
       setPlayerName(config.host_name);
       setIsHost(true);
       setIsCreateOpen(false);
+      setPrefilledRoomConfig(null);
+      setIsHostNewGameOpen(false);
 
       // Manager coordinates the game and does NOT join as a playing player with cards
       setCards([]);
@@ -699,15 +763,21 @@ export function App() {
         ...prev,
         code: data.room_code,
         status: 'lobby',
+        stage: 'waiting',
+        drawn_balls: [],
+        last_drawn_ball: null,
+        remaining_balls: 75,
         draw_interval: config.draw_interval,
         draw_mode: config.draw_mode,
         prizes: (config.prizes || []).map((p: any, idx: number) => ({
           id: `prz_init_${idx}`,
           title: p.title,
           description: p.description || '',
+          target_type: p.target_type || (idx === (config.prizes || []).length - 1 ? 'blackout' : 'line'),
           order: idx + 1,
         })),
         game_log: [],
+        active_contest: null,
       }));
 
       // Host enters TV / Telão mode first
@@ -718,10 +788,14 @@ export function App() {
   };
 
   // Join room flow
-  const handleJoinRoom = async (data: { playerName: string; cardCount: number; pin?: string }) => {
-    if (!joinModalCode) return;
+  const handleJoinRoom = async (
+    data: { playerName: string; cardCount: number; pin?: string },
+    targetCode?: string
+  ) => {
+    const codeToJoin = targetCode || joinModalCode;
+    if (!codeToJoin) return;
     try {
-      const res = await fetch(`/api/rooms/${joinModalCode}/join`, {
+      const res = await fetch(`/api/rooms/${codeToJoin}/join`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -738,6 +812,7 @@ export function App() {
       const respData = await res.json();
 
       setRoomCode(respData.room_code);
+      setRoomPin(data.pin || respData.pin || '');
       setPlayerId(respData.player_id);
       setPlayerName(respData.player_name);
       setPlayerToken(respData.token);
@@ -745,13 +820,101 @@ export function App() {
       setCards(respData.cards);
       setGameState((prev) => ({
         ...prev,
+        code: respData.room_code,
+        status: 'lobby',
+        stage: 'waiting',
+        drawn_balls: [],
+        remaining_balls: 75,
+        last_drawn_ball: null,
         prizes: respData.prizes || prev.prizes || [],
+        game_log: [],
+        active_contest: null,
       }));
       setJoinModalCode(null);
       setCurrentView('game');
     } catch (err: any) {
       alert(err.message || 'Erro ao ingressar');
     }
+  };
+
+  // Host starts new game handlers
+  const handleQuickStartNewGame = async () => {
+    if (!roomCode || !playerId) return;
+    setIsStartingNewGame(true);
+    try {
+      const res = await fetch(`/api/rooms/${roomCode}/new-game`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ host_id: playerId }),
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.detail || 'Falha ao iniciar nova partida');
+      }
+      const data = await res.json();
+      setIsHostNewGameOpen(false);
+      setRoomCode(data.room_code);
+      setRoomPin(data.pin || '');
+      setPlayerId(data.host_id);
+      setPlayerToken(data.token);
+      setIsHost(true);
+      setCards([]);
+      setGameState((prev) => ({
+        ...prev,
+        code: data.room_code,
+        status: 'lobby',
+        stage: 'waiting',
+        drawn_balls: [],
+        last_drawn_ball: null,
+        remaining_balls: 75,
+        draw_interval: data.draw_interval || prev.draw_interval,
+        draw_mode: data.draw_mode || prev.draw_mode,
+        prizes: data.prizes || [],
+        game_log: [],
+        active_contest: null,
+      }));
+      setCurrentView('host');
+      setStatusBanner(`Nova partida iniciada na sala ${data.room_code}! Redirecionando os jogadores...`);
+      if (soundEnabled && voiceEnabled) speakText('Nova partida iniciada! Aguardando os jogadores entrarem.');
+    } catch (err: any) {
+      alert(err.message || 'Erro ao iniciar nova partida');
+    } finally {
+      setIsStartingNewGame(false);
+    }
+  };
+
+  const handleCustomStartNewGame = () => {
+    setIsHostNewGameOpen(false);
+    setPrefilledRoomConfig({
+      name: gameState.code ? `Bingo - Próxima Rodada` : '',
+      win_condition: gameState.win_condition || 'multi_stage',
+      draw_interval: gameState.draw_interval || 5,
+      draw_mode: gameState.draw_mode || 'auto',
+      prizes: (gameState.prizes || []).map((p) => ({
+        title: p.title,
+        description: p.description || '',
+        target_type: p.target_type || 'line',
+      })),
+      previous_room_code: roomCode,
+    });
+    setIsCreateOpen(true);
+  };
+
+  const handleRedirectToNewGame = async (targetCode: string, pin?: string) => {
+    setNewGameRedirect(null);
+    clearActiveSession();
+    disconnect();
+    const effectiveName = playerName || localStorage.getItem('bingo_player_name') || 'Jogador';
+    const effectiveCardCount = cards.length > 0 ? cards.length : 2;
+    await handleJoinRoom(
+      {
+        playerName: effectiveName,
+        cardCount: effectiveCardCount,
+        pin: pin,
+      },
+      targetCode
+    );
   };
 
   // Marking number on player card
@@ -817,11 +980,24 @@ export function App() {
     sendMessage('set_speed', { host_id: playerId, interval });
   };
 
-  const handleAddPrize = (title: string, description: string) => {
+  const handleAddPrize = (
+    title: string,
+    description: string,
+    targetType: 'line' | 'blackout' = 'line'
+  ) => {
     sendMessage('add_prize', {
       host_id: playerId,
       title,
       description,
+      target_type: targetType,
+    });
+  };
+
+  const handleUpdatePrizeTarget = (prizeId: string, targetType: 'line' | 'blackout') => {
+    sendMessage('update_prize', {
+      host_id: playerId,
+      prize_id: prizeId,
+      target_type: targetType,
     });
   };
 
@@ -902,6 +1078,8 @@ export function App() {
             managerInactive={gameState.manager_inactive || (gameState.manager_last_active_at ? (Date.now() / 1000 - gameState.manager_last_active_at >= 120) : false)}
             soundEnabled={soundEnabled}
             onToggleSound={handleToggleSound}
+            isHost={isHost}
+            onStartNewGame={() => setIsHostNewGameOpen(true)}
           />
         )}
 
@@ -927,8 +1105,10 @@ export function App() {
             }}
             onBackToPlayerView={cards.length > 0 ? () => setCurrentView('game') : undefined}
             onAddPrize={handleAddPrize}
+            onUpdatePrizeTarget={handleUpdatePrizeTarget}
             onRemovePrize={handleRemovePrize}
             onOpenUsers={() => setIsUsersOpen(true)}
+            onStartNewGame={() => setIsHostNewGameOpen(true)}
           />
         )}
       </main>
@@ -936,9 +1116,36 @@ export function App() {
       {/* MODALS */}
       <CreateRoomModal
         isOpen={isCreateOpen}
-        onClose={() => setIsCreateOpen(false)}
+        onClose={() => {
+          setIsCreateOpen(false);
+          setPrefilledRoomConfig(null);
+        }}
         onCreate={handleCreateRoom}
+        initialConfig={prefilledRoomConfig}
       />
+
+      <HostNewGameModal
+        isOpen={isHostNewGameOpen}
+        onClose={() => setIsHostNewGameOpen(false)}
+        onQuickStart={handleQuickStartNewGame}
+        onCustomStart={handleCustomStartNewGame}
+        isLoading={isStartingNewGame}
+      />
+
+      {newGameRedirect && (
+        <NewGameRedirectModal
+          isOpen={Boolean(newGameRedirect)}
+          newRoomCode={newGameRedirect.new_room_code}
+          roomName={newGameRedirect.room_name}
+          hostName={newGameRedirect.host_name}
+          pin={newGameRedirect.pin}
+          onJoin={handleRedirectToNewGame}
+          onDismiss={() => {
+            setNewGameRedirect(null);
+            handleBackToLobby();
+          }}
+        />
+      )}
 
       {joinModalCode && (
         <JoinRoomModal

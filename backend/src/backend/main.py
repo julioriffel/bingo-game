@@ -59,8 +59,7 @@ app.add_middleware(
 app.include_router(rooms.router)
 app.include_router(websockets.router)
 
-@app.api_route("/health", methods=["GET", "HEAD"])
-@app.api_route("/api/health", methods=["GET", "HEAD"])
+@app.get("/health", tags=["Health"], operation_id="health_check")
 def health_check():
     return {
         "status": "healthy",
@@ -68,6 +67,11 @@ def health_check():
         "engine": "Bingo 75",
         "python_version": "3.14",
     }
+
+@app.head("/health", include_in_schema=False)
+@app.api_route("/api/health", methods=["GET", "HEAD"], include_in_schema=False)
+def health_check_alias():
+    return health_check()
 
 # SPA Static Files Serving for Production Single-Container
 static_dir = Path(__file__).resolve().parent.parent.parent / "static"
@@ -79,9 +83,9 @@ if static_dir.exists():
     if assets_dir.exists():
         app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
 
-    @app.api_route("/{full_path:path}", methods=["GET", "HEAD"])
+    @app.api_route("/{full_path:path}", methods=["GET", "HEAD"], include_in_schema=False)
     async def serve_spa(full_path: str):
-        if full_path.startswith("api") or full_path.startswith("ws"):
+        if full_path.startswith(".") or full_path.startswith("api") or full_path.startswith("ws"):
             return Response(status_code=404)
         target = static_dir / full_path
         if target.is_file():
